@@ -122,6 +122,38 @@ Rate limits cause clean exits in `-p` mode. The wrapper detects this, waits for 
 
 Sessions run with `--dangerously-skip-permissions` by default, which is required for autonomous operation. Review the generated task contract before approving launch. Sessions execute in your user security context with full file system and network access.
 
+## Acknowledgements
+
+This project integrates patterns and insights from many sources in the Claude Code community and beyond:
+
+**Architecture & Session Management**
+- [Boris Cherny](https://github.com/anthropics/claude-code) — Claude Code creator; `-p` mode, `--continue`, stream-json output that make the restart loop possible
+- [Anthropic](https://docs.anthropic.com) — Rate limit bucket modeling (5-hour rolling window), MCP protocol, SKILL.md standard
+- [arXiv:2602.11988](https://arxiv.org/abs/2602.11988) (Kangwook Lee et al.) — Context degradation research proving verbose context reduces agent success 0.5–2%
+
+**Anti-Drift & Alignment**
+- [Garry Tan](https://gist.github.com/garrytan/001f9074cab1a8f545ebecbc73a813df) — Plan-mode review v2.0.0: scope challenge, failure mode gap analysis, NOT-goals as primary anti-drift mechanism
+- Leo ([@runes_leo](https://x.com/runes_leo)) — Risk-tiered review: high-risk code gets cross-model review, low-risk ships on passing tests
+- Eno Reyes ([@EnoReyes](https://x.com/EnoReyes)) — "Encoded taste" concept: automated rules/hooks = programmatically enforced judgment
+
+**Agent Engineering**
+- [Stripe Engineering](https://stripe.com) — Blueprint pattern (deterministic nodes + agentic loops), scoped rules over global conditionals, context pre-hydration (1,300+ merged agent PRs/week)
+- [GSD](https://github.com/hasantoxr/gsd) (19K stars) — Fresh subagent context per task to prevent context rot, atomic commits per task
+- [Systematicls](https://systematicls.com) — Adversarial 3-agent bug-finding pattern (hunter → skeptic → referee), neutral prompts to avoid sycophancy bias
+- [Voyager](https://arxiv.org/abs/2305.16291) + [Butter](https://butter.dev) — Meta-tool generation: agents auto-extract reusable tools from multi-tool sequences
+
+**Community Patterns**
+- [affaan-m/claude-code-patterns](https://github.com/affaan-m/everything-claude-code) — Search-first workflow, session persistence hooks, strategic compaction at phase transitions
+- [Peter Steinberger](https://steipete.com) (steipete) — "Config shrinks with models" insight; challenge over-engineering, audit hook/MCP ROI regularly
+- [Ole Lehmann](https://x.com/itsolelehmann) — Voice DNA anti-AI writing patterns (50+ banned phrases)
+- [Aakash Gupta](https://x.com/aaborofficial) — 100+ CLAUDE.md iterations proving minimal config > comprehensive config
+- [Jonny Miller](https://x.com/jonnymiller) — Agent latches & reactive meta-learning (Nine Meta-Learning Loops)
+
+**Code Quality**
+- [Dan Peguine](https://github.com/danpeg) — `/bug-hunt` adversarial skill (hunter/skeptic/referee scoring)
+- [SkillsMP](https://skillsmp.com) — Skill marketplace indexing 270K+ SKILL.md-standard agent skills
+- [OpenAI](https://openai.com) (Ryan Lopopolo) — "Harness Engineering" framing: context engineering → architectural constraints → entropy management
+
 ## License
 
 MIT
