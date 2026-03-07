@@ -19,7 +19,7 @@ echo ""
 # Check prerequisites
 if ! command -v python3 &>/dev/null; then
     echo "ERROR: python3 is required but not found."
-    echo "Install Python 3.6+ and try again."
+    echo "Install Python 3.10+ and try again."
     exit 1
 fi
 

@@ -88,7 +88,7 @@ They're complementary — `/launch` structures the task, Ralph iterates until do
 ## Requirements
 
 - **Claude Code CLI** (`npm install -g @anthropic-ai/claude-code`)
-- **Python 3.6+** (stdlib only, no pip packages for core functionality)
+- **Python 3.10+** (stdlib only, no pip packages for core functionality)
 - **tmux** (optional, falls back to nohup)
 - **PyYAML** (optional, only for `--queue` mode: `pip install pyyaml`)
 
@@ -117,6 +117,10 @@ The launcher runs a restart loop around `claude -p` (non-interactive mode):
 ```
 
 Rate limits cause clean exits in `-p` mode. The wrapper detects this, waits for the 5-hour window to decay, then restarts with `--continue` to resume work.
+
+## Security
+
+Sessions run with `--dangerously-skip-permissions` by default, which is required for autonomous operation. Review the generated task contract before approving launch. Sessions execute in your user security context with full file system and network access.
 
 ## License
 
