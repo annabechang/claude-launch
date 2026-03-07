@@ -189,7 +189,6 @@ This project integrates patterns and insights from many sources in the Claude Co
 - [Jonny Miller](https://x.com/jonnymiller) — Agent latches & reactive meta-learning (Nine Meta-Learning Loops)
 
 **Code Quality**
-- [Dan Peguine](https://github.com/danpeg) — `/bug-hunt` adversarial skill (hunter/skeptic/referee scoring)
 - [SkillsMP](https://skillsmp.com) — Skill marketplace indexing 270K+ SKILL.md-standard agent skills
 - [OpenAI](https://openai.com) (Ryan Lopopolo) — "Harness Engineering" framing: context engineering → architectural constraints → entropy management
 
