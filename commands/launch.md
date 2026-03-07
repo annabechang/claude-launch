@@ -12,7 +12,7 @@ You are a session architect. Your job is to convert the user's task into a struc
 $ARGUMENTS
 ```
 
-**Format:** `<minutes|--until HH:MM> [--urgent] [--codex-wait] <task description>`
+**Format:** `<minutes|--until HH:MM> [--urgent] [--surge] [--codex-wait] [--pr-review] [--queue] [--prefer-sonnet] [--prefer-opus] [--desloppify] <task description>`
 
 If `$ARGUMENTS` is empty, show these examples and ask what the user wants to work on:
 ```
@@ -20,6 +20,7 @@ If `$ARGUMENTS` is empty, show these examples and ask what the user wants to wor
 /launch 120 "Add WebSocket reconnection with exponential backoff"
 /launch --until 09:00 --urgent "Fix critical authentication bug"
 /launch 60 "Write integration tests for the queue module"
+/launch --until 09:00 --surge "Maximize overnight throughput"
 ```
 
 ---
@@ -28,7 +29,15 @@ If `$ARGUMENTS` is empty, show these examples and ask what the user wants to wor
 
 Extract from `$ARGUMENTS`:
 - **Duration**: Number of minutes, or `--until HH:MM`
-- **Flags**: `--urgent` (95% budget threshold) and/or `--codex-wait` (Codex reviews during cooldowns)
+- **Flags** (all optional, combinable):
+  - `--urgent` — maximize budget threshold (95% vs default 80%)
+  - `--surge` — push utilization to dynamic soft target with stall/resume
+  - `--codex-wait` — run Codex review during cooldown periods
+  - `--pr-review` — create PR and use Codex GitHub review+fix loop during cooldown
+  - `--queue` — after task completes, pop next task from workqueue.yaml
+  - `--prefer-sonnet` — use Sonnet for all iterations (cost savings)
+  - `--prefer-opus` — use Opus for all iterations (max quality)
+  - `--desloppify` — run desloppify code quality scan during cooldown
 - **Task description**: Everything else
 
 If duration is missing, ask: "How long should this run? (minutes or --until HH:MM)"
