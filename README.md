@@ -196,8 +196,7 @@ This project integrates patterns and insights from many sources in the Claude Co
 
 MIT
 
-> [!NOTE]
-> claude-launch is a working implementation, but it's also a starting point. The patterns here — task contracts, NOT-goals, cross-model review, restart loops — are more important than any specific script. Fork it, rewrite it, make it yours.
+
 
 > [!WARNING]
 > This codebase was largely written by Claude Code (with human oversight and review). It may contain bugs, edge cases, or assumptions that don't hold in your environment. Review before trusting it with production work.
