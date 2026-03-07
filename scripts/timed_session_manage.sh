@@ -34,27 +34,46 @@ get_session_info() {
     local timer_project="unknown"
 
     if [ -f "$timer_file" ]; then
-        eval "$(python3 -c "
-import json, time
+        # Read validated output from Python line-by-line — never eval
+        local py_output
+        py_output=$(python3 -c "
+import json, time, sys, re
 from pathlib import Path
 try:
-    d = json.load(open('$timer_file'))
-    active = d.get('active', False)
-    pid = d.get('launcher_pid', '')
+    with open(sys.argv[1]) as f:
+        d = json.load(f)
+    active = 'true' if d.get('active', False) else 'false'
+    pid = str(d.get('launcher_pid', ''))
     remaining = max(0, d.get('end_ts', 0) - time.time())
     cwd = d.get('cwd', '')
     project = Path(cwd).name if cwd else 'unknown'
-    print(f'timer_active={str(active).lower()}')
-    print(f'launcher_pid={pid}')
-    print(f'remaining_min={int(remaining/60)}')
-    project = project.replace(chr(39), '')
-    print(f'timer_project={chr(39)}{project}{chr(39)}')
+    # Sanitize: pid must be numeric, project must be alphanumeric/dash/underscore/dot
+    pid = pid if re.fullmatch(r'[0-9]*', pid) else ''
+    project = re.sub(r'[^a-zA-Z0-9._-]', '', project) or 'unknown'
+    print(active)
+    print(pid)
+    print(int(remaining / 60))
+    print(project)
 except Exception:
-    print('timer_active=false')
-    print('launcher_pid=')
-    print('remaining_min=0')
-    print(f'timer_project={chr(39)}unknown{chr(39)}')
-" 2>/dev/null || echo "timer_active=false")"
+    print('false')
+    print('')
+    print('0')
+    print('unknown')
+" "$timer_file" 2>/dev/null) || true
+
+        # Parse fixed-order output with read — no eval
+        {
+            IFS= read -r timer_active
+            IFS= read -r launcher_pid
+            IFS= read -r remaining_min
+            IFS= read -r timer_project
+        } <<< "$py_output"
+
+        # Validate values in bash as a second safety layer
+        [[ "$timer_active" =~ ^(true|false)$ ]] || timer_active="false"
+        [[ "$launcher_pid" =~ ^[0-9]*$ ]] || launcher_pid=""
+        [[ "$remaining_min" =~ ^[0-9]+$ ]] || remaining_min="0"
+        [[ "$timer_project" =~ ^[a-zA-Z0-9._-]+$ ]] || timer_project="unknown"
     fi
 
     # Check tmux session
