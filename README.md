@@ -2,11 +2,7 @@
 
 Fire-and-forget autonomous Claude Code sessions with task contracts, alignment checking, and time budgets.
 
-> [!NOTE]
-> claude-launch is a working implementation, but it's also a starting point. The patterns here — task contracts, NOT-goals, cross-model review, restart loops — are more important than any specific script. Fork it, rewrite it, make it yours.
 
-> [!WARNING]
-> This codebase was largely written by Claude Code (with human oversight and review). It may contain bugs, edge cases, or assumptions that don't hold in your environment. Review before trusting it with production work.
 
 ## The problem
 
@@ -31,9 +27,9 @@ chmod +x install.sh && ./install.sh
 The core ideas fit in a prompt. Tell your coding agent:
 
 > Implement a fire-and-forget autonomous session launcher for Claude Code according to this spec:
-> https://github.com/rongstuff/claude-launch/blob/main/commands/launch.md
+> [commands/launch.md](commands/launch.md)
 
-The `commands/launch.md` file is the spec — it defines the 8-phase workflow. Everything in `scripts/` is one implementation of that spec.
+The [`commands/launch.md`](commands/launch.md) file is the spec — it defines the 8-phase workflow. Everything in `scripts/` is one implementation of that spec.
 
 ## Requirements
 
@@ -200,3 +196,9 @@ This project integrates patterns and insights from many sources in the Claude Co
 ## License
 
 MIT
+
+> [!NOTE]
+> claude-launch is a working implementation, but it's also a starting point. The patterns here — task contracts, NOT-goals, cross-model review, restart loops — are more important than any specific script. Fork it, rewrite it, make it yours.
+
+> [!WARNING]
+> This codebase was largely written by Claude Code (with human oversight and review). It may contain bugs, edge cases, or assumptions that don't hold in your environment. Review before trusting it with production work.
