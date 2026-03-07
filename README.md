@@ -55,9 +55,9 @@ The [`commands/launch.md`](commands/launch.md) file is the spec — it defines t
 | **PyYAML** | Only for `--queue` mode (workqueue.yaml parsing) | `pip install pyyaml` |
 | **terminal-notifier** | macOS desktop notifications on session complete | `brew install terminal-notifier` |
 
-### Configuration
+### Platform notes
 
-The launcher reads Claude's OAuth token from macOS Keychain to query usage data. On Linux, it falls back to cached data. No API keys or manual configuration required — it uses the same credentials as your Claude Code CLI.
+The launcher reads Claude's OAuth token from **macOS Keychain** to query usage data for budget tracking. Linux is not currently supported for usage tracking — sessions will still run but without budget-aware cooldown optimization.
 
 ## `/launch` vs `/loop`
 
@@ -162,7 +162,7 @@ Sessions run with `--dangerously-skip-permissions` by default, which is required
 
 ## Acknowledgements
 
-This project integrates patterns and insights from many sources in the Claude Code community and beyond:
+This project was inspired by patterns and insights from many sources in the Claude Code community and beyond:
 
 **Architecture & Session Management**
 - [Boris Cherny](https://github.com/anthropics/claude-code) — Claude Code creator; `-p` mode, `--continue`, stream-json output that make the restart loop possible
@@ -179,14 +179,11 @@ This project integrates patterns and insights from many sources in the Claude Co
 - [OpenAI Symphony](https://github.com/openai/symphony) — Orchestrator architecture, WORKFLOW.md-as-contract pattern, workspace isolation
 - [GSD](https://github.com/hasantoxr/gsd) (19K stars) — Fresh subagent context per task to prevent context rot, atomic commits per task
 - [Systematicls](https://systematicls.com) — Adversarial 3-agent bug-finding pattern (hunter → skeptic → referee), neutral prompts to avoid sycophancy bias
-- [Voyager](https://arxiv.org/abs/2305.16291) + [Butter](https://butter.dev) — Meta-tool generation: agents auto-extract reusable tools from multi-tool sequences
 
 **Community Patterns**
 - [affaan-m/claude-code-patterns](https://github.com/affaan-m/everything-claude-code) — Search-first workflow, session persistence hooks, strategic compaction at phase transitions
 - [Peter Steinberger](https://steipete.com) (steipete) — "Config shrinks with models" insight; challenge over-engineering, audit hook/MCP ROI regularly
-- [Ole Lehmann](https://x.com/itsolelehmann) — Voice DNA anti-AI writing patterns (50+ banned phrases)
 - [Aakash Gupta](https://x.com/aaborofficial) — 100+ CLAUDE.md iterations proving minimal config > comprehensive config
-- [Jonny Miller](https://x.com/jonnymiller) — Agent latches & reactive meta-learning (Nine Meta-Learning Loops)
 
 **Code Quality**
 - [SkillsMP](https://skillsmp.com) — Skill marketplace indexing 270K+ SKILL.md-standard agent skills
