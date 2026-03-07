@@ -2022,7 +2022,7 @@ write_surge_marker(
         fi
 
         log "Launching: $CLAUDE_BIN -p --model $model --fallback-model sonnet --stream-json (iter $ITERATION)..."
-        log "Monitor with: ~/.claude/hooks/timed_session_monitor.sh"
+        log "Monitor with: ~/.claude/scripts/timed_session_monitor.sh"
         local exec_start
         exec_start=$(date +%s)
         "$CLAUDE_BIN" "${claude_args[@]}" >> "$STREAM_LOG" 2>&1 &
