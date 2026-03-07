@@ -2511,13 +2511,12 @@ with open('$WORKQUEUE_FILE', 'w') as f:
             queue_args+=("$QUEUE_TASK_DESC")
 
             log "Queue: launching next task in ${QUEUE_TASK_PROJECT}..."
-            if ! cd "$QUEUE_TASK_PROJECT" 2>/dev/null; then
+            if cd "$QUEUE_TASK_PROJECT" 2>/dev/null; then
+                # Re-invoke launcher for next task (clean state)
+                exec "$0" "${queue_args[@]}"
+            else
                 log "Queue: failed to cd to ${QUEUE_TASK_PROJECT} — skipping task"
-                break
             fi
-
-            # Re-invoke launcher for next task (clean state)
-            exec "$0" "${queue_args[@]}"
         else
             log "Queue: no more pending tasks — queue complete"
         fi
