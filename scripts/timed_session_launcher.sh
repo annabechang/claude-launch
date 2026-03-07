@@ -118,7 +118,8 @@ if [ -z "${LAUNCHER_DETACHED:-}" ]; then
         if ! tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
             echo "ERROR: tmux session creation failed for '$SESSION_NAME'"
             echo "Falling back to nohup..."
-            nohup "$SCRIPT_ABS" "$@" >> "$LAUNCHER_LOG" 2>&1 &
+            LAUNCHER_DETACHED=1 LAUNCHER_INSTANCE_ID="$INSTANCE_ID" \
+                nohup "$SCRIPT_ABS" "$@" >> "$LAUNCHER_LOG" 2>&1 &
             CHILD_PID=$!
             disown "$CHILD_PID" 2>/dev/null || true
             echo "$CHILD_PID" > "$PID_FILE"
@@ -2075,9 +2076,11 @@ print(count)
 " 2>/dev/null || echo "0")
         fi
 
+        local was_stall=false
         if [ "$exit_code" -eq 0 ] && [ "$exec_secs" -gt 120 ] && [ "$tool_count" -eq 0 ]; then
             log "STALL DETECTED: Ran ${exec_secs}s but produced 0 tool calls"
             log "This iteration was unproductive — Claude may have been stuck"
+            was_stall=true
             consecutive_failures=$((consecutive_failures + 1))
             if [ "$consecutive_failures" -ge 2 ]; then
                 log "Multiple stalled iterations — ending session to avoid wasting time"
@@ -2208,7 +2211,8 @@ else:
                 terminal-notifier -title "Claude Launcher" -message "Session ended: ${consecutive_failures} consecutive errors" -sound Basso 2>/dev/null || true
                 break
             fi
-        else
+        elif [ "$was_stall" = false ]; then
+            # Only reset on clean exit — don't reset if stall detection already incremented
             consecutive_failures=0
         fi
 
@@ -2507,9 +2511,10 @@ with open('$WORKQUEUE_FILE', 'w') as f:
             queue_args+=("$QUEUE_TASK_DESC")
 
             log "Queue: launching next task in ${QUEUE_TASK_PROJECT}..."
-            cd "$QUEUE_TASK_PROJECT" 2>/dev/null || {
-                log "Queue: failed to cd to ${QUEUE_TASK_PROJECT} — skipping"
-            }
+            if ! cd "$QUEUE_TASK_PROJECT" 2>/dev/null; then
+                log "Queue: failed to cd to ${QUEUE_TASK_PROJECT} — skipping task"
+                break
+            fi
 
             # Re-invoke launcher for next task (clean state)
             exec "$0" "${queue_args[@]}"

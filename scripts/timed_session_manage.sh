@@ -260,7 +260,7 @@ cmd_cleanup() {
     for id in $(get_all_instance_ids); do
         local info
         info=$(get_session_info "$id")
-        IFS='|' read -r sid status _ _ _ _ has_tmux <<< "$info"
+        IFS='|' read -r sid status _ _ _ _ has_tmux _ <<< "$info"
 
         if [ "$status" = "ORPHANED" ]; then
             echo "  ORPHANED: $id (timer active, launcher dead)"
