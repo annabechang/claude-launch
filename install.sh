@@ -36,6 +36,21 @@ else
     echo "  tmux: not found (sessions will use nohup fallback)"
     echo "  Install tmux for attachable sessions: brew install tmux"
 fi
+
+if command -v codex &>/dev/null; then
+    echo "  codex: found (enables Codex alignment review during cooldowns)"
+else
+    echo "  codex: not found (optional, enables Codex alignment review during cooldowns)"
+fi
+
+if command -v timeout &>/dev/null; then
+    echo "  timeout: found (enables time-limited subprocess execution)"
+elif command -v gtimeout &>/dev/null; then
+    echo "  gtimeout: found (enables time-limited subprocess execution)"
+else
+    echo "  timeout: not found (optional, enables time-limited subprocess execution)"
+    echo "  Install coreutils on macOS: brew install coreutils"
+fi
 echo ""
 
 # Create directories

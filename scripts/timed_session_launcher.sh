@@ -62,6 +62,19 @@ LAUNCHER_LOG="/tmp/timed-session-launcher-${INSTANCE_ID}.log"
 STREAM_LOG="/tmp/timed-session-stream-${INSTANCE_ID}.jsonl"
 PID_FILE="/tmp/timed-session-launcher-${INSTANCE_ID}.pid"
 
+# Portable timeout wrapper (stock macOS has no `timeout`)
+_timeout() {
+    if command -v timeout &>/dev/null; then
+        timeout "$@"
+    elif command -v gtimeout &>/dev/null; then
+        gtimeout "$@"
+    else
+        # No timeout available — run without time limit
+        local duration="$1"; shift
+        "$@"
+    fi
+}
+
 # ─── Self-detach for terminal resilience ─────────────────────
 # On first invocation, re-launch in a detached tmux session so
 # the launcher survives terminal closure. User can attach with:
@@ -678,7 +691,7 @@ run_codex_during_wait() {
 
     # Run Codex review in background
     (
-        timeout "$codex_timeout" codex review --uncommitted \
+        _timeout "$codex_timeout" codex review --uncommitted \
             --title "Review of autonomous session iteration $ITERATION" \
             > notes/codex-review.md 2>/dev/null
     ) &
@@ -710,10 +723,10 @@ run_desloppify_during_wait() {
     log "Running desloppify scan during cooldown (${deslo_timeout}s timeout)"
 
     (
-        timeout "$((deslo_timeout / 2))" desloppify scan --path . \
+        _timeout "$((deslo_timeout / 2))" desloppify scan --path . \
             > notes/desloppify-report.md 2>&1 || true
 
-        timeout "$((deslo_timeout / 2))" desloppify next \
+        _timeout "$((deslo_timeout / 2))" desloppify next \
             >> notes/desloppify-report.md 2>&1 || true
     ) &
     local DESLO_PID=$!
@@ -968,7 +981,7 @@ ASSESSMENT: [1-2 sentence summary]
 CORRECTIVE_GUIDANCE: [only if DRIFTING/OFF_TRACK — specific instructions for next iteration]"
 
     # Call Codex CLI (timeout 120s, read-only sandbox)
-    timeout 120 codex --approval-policy never --sandbox read-only "$prompt" \
+    _timeout 120 codex --approval-policy never --sandbox read-only "$prompt" \
         > notes/codex-alignment.md 2>/dev/null || true
 
     if [ -f "notes/codex-alignment.md" ] && [ -s "notes/codex-alignment.md" ]; then
@@ -1046,7 +1059,7 @@ Be concise — 3-5 sentences max."
         log "Opus review: skipped (claude binary not found)"
         return
     fi
-    CLAUDECODE="" timeout 90 "$CLAUDE_BIN" -p --model opus "$review_prompt" \
+    CLAUDECODE="" _timeout 90 "$CLAUDE_BIN" -p --model opus "$review_prompt" \
         --dangerously-skip-permissions --no-session-persistence \
         > notes/opus-review.md 2>/dev/null || true
 
@@ -1135,7 +1148,7 @@ TESTREPORT
     log "Test gate: running '$test_cmd'..."
 
     local test_output exit_code
-    test_output=$(timeout 180 bash -c "$test_cmd" 2>&1) || exit_code=$?
+    test_output=$(_timeout 180 bash -c "$test_cmd" 2>&1) || exit_code=$?
     exit_code=${exit_code:-0}
 
     # Parse results based on test framework
@@ -1200,7 +1213,7 @@ TESTREPORT
 
     if [ -n "$coverage_cmd" ]; then
         local cov_output
-        cov_output=$(timeout 180 bash -c "$coverage_cmd" 2>&1 || true)
+        cov_output=$(_timeout 180 bash -c "$coverage_cmd" 2>&1 || true)
         # Extract coverage percentage
         coverage=$(echo "$cov_output" | grep -oE '[0-9]+\.?[0-9]*%' | tail -1 | tr -d '%' || true)
     fi
@@ -1300,7 +1313,7 @@ ${hits}
     if echo "$changed_files" | grep -qE 'package\.json|package-lock\.json'; then
         if command -v npm >/dev/null 2>&1; then
             local npm_audit
-            npm_audit=$(timeout 60 npm audit --json 2>/dev/null | python3 -c "
+            npm_audit=$(_timeout 60 npm audit --json 2>/dev/null | python3 -c "
 import sys, json
 try:
     d = json.load(sys.stdin)
@@ -1321,7 +1334,7 @@ except: pass
     if echo "$changed_files" | grep -qE 'requirements\.txt|pyproject\.toml|setup\.py'; then
         if command -v pip-audit >/dev/null 2>&1; then
             local pip_issues
-            pip_issues=$(timeout 60 pip-audit 2>/dev/null | grep -c 'VULNERABLE' || echo 0)
+            pip_issues=$(_timeout 60 pip-audit 2>/dev/null | grep -c 'VULNERABLE' || echo 0)
             if [ "$pip_issues" -gt 0 ]; then
                 dep_issues="${dep_issues:+$dep_issues; }pip: $pip_issues vulnerable packages"
                 status="ISSUES_FOUND"
