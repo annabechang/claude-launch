@@ -2,7 +2,8 @@
 """
 Refresh the Claude usage cache by calling the Anthropic usage API.
 
-Extracted from statusline.py for use in non-interactive contexts (-p mode).
+Provides usage data for non-interactive contexts (-p mode) where
+the Claude Code statusline does not run.
 
 Usage:
   As module:  from _refresh_usage_cache import refresh_cache

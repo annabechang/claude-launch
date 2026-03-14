@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Unified Execution Engine — shared brain for Launcher + Conductor + Regular Sessions.
+"""Unified Execution Engine — strategy and phase routing for the launcher.
 
 Provides:
   - Task classification (complexity → execution strategy)
@@ -45,7 +45,7 @@ class Strategy(Enum):
 
 
 class Phase(Enum):
-    """Pipeline phases (superset of both launcher and conductor phases)."""
+    """Pipeline phases for task execution."""
     RESEARCH = "research"
     TEST_BRAINSTORM = "test_brainstorm"
     IMPLEMENT = "implement"
@@ -393,8 +393,7 @@ class ExecutionEngine:
                       has_contract: bool = True) -> CooldownPlan:
         """Plan what to do during a rate-limit cooldown between iterations.
 
-        Merges the best of launcher's cooldown utilization with conductor's
-        refinement capabilities.
+        Plans productive work during rate-limit cooldown windows.
         """
         steps = []
         priority = 0
@@ -463,7 +462,7 @@ class ExecutionEngine:
                 "timeout_pct": 0.30,
             })
 
-        # 7. Refinement loop (NEW — bringing conductor's refinement into cooldowns)
+        # 7. Refinement loop (cross-model critique during cooldowns)
         # For complex/implement tasks after iteration 2+, run a critique cycle
         if iteration >= 2 and task_type.lower() in ("complex", "implement", "code"):
             priority += 1
@@ -498,7 +497,7 @@ class ExecutionEngine:
                            implementation_plan: str = "") -> str:
         """Generate a high-quality prompt for a specific pipeline phase.
 
-        Combines launcher's prompt quality with conductor's phase structure.
+        Generates phase-aware prompts for pipeline execution.
         """
         if phase == "research":
             return self._research_prompt(task, contract, remaining_min)
@@ -783,7 +782,7 @@ A cross-model review found issues with the previous work.
 - Run tests after each change
 - If tests fail, fix before moving on"""
 
-    # ── Quality Gates (from conductor) ────────────────────────
+    # ── Quality Gates ─────────────────────────────────────────
 
     def quality_gate_checks(self) -> list[dict]:
         """Return the quality gate definitions for pipeline tasks."""

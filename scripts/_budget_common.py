@@ -456,7 +456,7 @@ def get_delegation(claude_phase: str, codex_phase: str) -> dict:
     )
 
 
-# --- Claude phase guidance (for start hook injection) ---
+# --- Claude phase guidance (for external hook consumers) ---
 
 CLAUDE_PHASE_GUIDANCE = {
     "SPRINT": (
@@ -530,10 +530,8 @@ def _run_git(cmd: str, cwd: str) -> str:
 def write_auto_checkpoint(cwd: str, reason: str = "budget_checkpoint") -> bool:
     """Write notes/resume-checkpoint.md if it doesn't already exist.
 
-    Called by:
-    - budget_advisor_stop.py: when CHECKPOINT phase detected (proactive)
-    - precompact_intent_anchor.py: before context compaction at CHECKPOINT
-    - auto_resume_end.py: fallback on session end
+    Called by the launcher on session end or budget exhaustion.
+    Can also be called by external budget/session hooks if installed.
 
     Returns True if a checkpoint was written, False if skipped.
     """

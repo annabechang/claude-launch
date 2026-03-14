@@ -645,7 +645,7 @@ except Exception:
 
 refresh_usage_cache() {
     # Refresh the usage cache by calling the Anthropic API directly.
-    # Critical for -p mode where statusline.py never runs.
+    # Critical for -p mode where usage data is not refreshed automatically.
     python3 "$SCRIPTS_DIR/_refresh_usage_cache.py" 2>/dev/null || true
 }
 
@@ -798,8 +798,8 @@ with open(issues_file, 'w') as f:
 run_codex_pr_review() {
     # Create/update a PR for the current branch and let Codex review it via
     # GitHub's native code review (uses separate weekly review quota).
-    # If Codex requests changes, the codex-fix-loop.yml GitHub Action triggers
-    # @codex fix automatically. We poll for completion then git pull.
+    # If Codex requests changes, we poll for fixes then git pull.
+    # (Requires a GitHub Action or Codex auto-fix setup for automated fixes.)
 
     local branch
     branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
@@ -1309,7 +1309,7 @@ ACTION_REQUIRED: $(
 )
 TESTREPORT
 
-    # Also write to standard location for test_results_capture hook compatibility
+    # Also write structured JSON for external tool consumption
     cat > /tmp/claude-last-test-results.json <<TESTJSON
 {"timestamp":"$(date -u +%Y-%m-%dT%H:%M:%SZ)","command":"${test_cmd}","passed":${passed:-0},"failed":${failed:-0},"errors":${errors:-0},"all_passed":$([ "$status" = "ALL_PASSING" ] && echo true || echo false),"coverage":"${coverage:-null}","raw_summary":"$(echo "$raw_summary" | tr '"' "'")"}
 TESTJSON
@@ -1700,7 +1700,7 @@ This session runs an autonomous experiment loop (modify→run→eval→keep/disc
 THIS IS ITERATION 1 — SETUP PHASE.
 
 Follow /autoresearch setup:
-1. Read docs/autoresearch-pattern.md if present
+1. Read any autoresearch documentation if present
 2. Identify: eval harness (immutable metric), experiment file (agent-mutable), constraints
 3. Create branch: autoresearch/<tag>
 4. Initialize results.tsv with header
@@ -2384,7 +2384,7 @@ print(count)
             fi
         fi
 
-        # Refresh usage cache (critical — statusline.py doesn't run in -p mode)
+        # Refresh usage cache (the Claude Code statusline doesn't run in -p mode)
         refresh_usage_cache
         log "Usage after exit: $(get_usage_pct)"
 
@@ -2529,7 +2529,7 @@ else:
                 log "Quick exit (${exec_secs}s) — computed cooldown: ${cooldown}s"
                 ;;
             ERROR)
-                # Unexpected error — exponential backoff (inspired by OpenClaw)
+                # Unexpected error — exponential backoff
                 # 60s → 120s → 300s → 600s → 900s based on consecutive failures
                 local error_backoffs=(60 120 300 600 900)
                 local backoff_idx=$((consecutive_failures - 1))
@@ -2620,9 +2620,9 @@ print(max(0, int(d['end_ts'] - time.time())))
         fi
 
         # Run refinement critique (pipeline mode, iteration 2+)
-        # Brings conductor's cross-model refinement into launched sessions
+        # Cross-model refinement: Codex critiques Claude's work
         if [ "$PIPELINE" = true ] && [ "$ITERATION" -ge 2 ] && [ -f "${EXECUTION_ENGINE:-}" ]; then
-            if should_use_codex; then
+            if [ "$(should_use_codex)" = "yes" ]; then
                 log "Running cross-model refinement critique (pipeline iter $ITERATION)..."
                 local critique_model="codex"
                 if [ "$model" = "sonnet" ] || [ "$model" = "opus" ]; then

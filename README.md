@@ -6,7 +6,9 @@ This project contributes an autonomous launcher for open-ended technical work th
 
 1. It keeps long-running work aligned using contract-first scope control (goal, NOT-goals, success criteria) plus iterative alignment checks.
 2. It runs one or more detached headless Claude sessions (parallel when needed) toward the target outcome, with optional headless Codex review loops for quality/alignment.
-3. It gives operators continuous control: run by time budget, intervene any time (`attach/stop/kill`), and feed updated guidance between iterations.
+3. It is **budget-aware**: tracks your 5h and 7d API utilization and adjusts behavior across phases (`SPRINT/CRUISE/WRAP_UP`) so work paces itself around your remaining capacity.
+4. It **auto-recovers from rate limits**: when Claude hits a rate limit, the launcher automatically waits for cooldown and restarts with `--continue` — no work is lost, no manual intervention needed.
+5. It gives operators continuous control: run by time budget, intervene any time (`attach/stop/kill`), and feed updated guidance between iterations.
 
 ## Why this exists
 
