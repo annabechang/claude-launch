@@ -87,7 +87,18 @@ if [ -z "${LAUNCHER_DETACHED:-}" ]; then
     # Resolve absolute script path (tmux may change cwd)
     SCRIPT_ABS="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
 
-    if command -v tmux &>/dev/null; then
+    # Detect cloud storage paths where tmux lacks Full Disk Access.
+    # macOS grants FDA per-app; tmux server runs as its own process without FDA,
+    # so it can't access Dropbox/iCloud/OneDrive directories. Use nohup instead.
+    USE_TMUX=true
+    case "$PWD" in
+        */Library/CloudStorage/*|*/Library/Mobile\ Documents/*)
+            USE_TMUX=false
+            echo "NOTE: Cloud storage path detected — using nohup instead of tmux (FDA restriction)"
+            ;;
+    esac
+
+    if [ "$USE_TMUX" = true ] && command -v tmux &>/dev/null; then
         # Collision detection: retry with new ID if session name exists
         local_retry=0
         while tmux has-session -t "$SESSION_NAME" 2>/dev/null; do
@@ -111,6 +122,7 @@ if [ -z "${LAUNCHER_DETACHED:-}" ]; then
         tmux new-session -d -s "$SESSION_NAME" \
             -e LAUNCHER_DETACHED=1 \
             -e LAUNCHER_INSTANCE_ID="$INSTANCE_ID" \
+            -e CLAUDE_PROJECT_DIR="$PWD" \
             -c "$PWD" \
             "$SCRIPT_ABS" "$@"
 
@@ -158,6 +170,7 @@ QUEUE_MODE=false
 WORKQUEUE_FILE="$HOME/.claude/daemon/workqueue.yaml"
 MODEL_PREFERENCE=""  # "", "sonnet", "opus" — user override for model selection
 DESLOPPIFY=false     # Run desloppify code quality scan during cooldown
+PIPELINE=false       # Multi-phase pipeline: research→implement→review across iterations
 BUDGET_THRESHOLD=80
 SURGE_SOFT_TARGET=90
 SURGE_HARD_CAP=95
@@ -179,8 +192,8 @@ log() {
 
 usage() {
     echo "Usage:"
-    echo "  $(basename "$0") <minutes> [--urgent] [--surge] [--codex-wait] [--pr-review] [--queue] [--force] <task>"
-    echo "  $(basename "$0") --until <HH:MM> [--urgent] [--surge] [--codex-wait] [--pr-review] [--queue] [--force] <task>"
+    echo "  $(basename "$0") <minutes> [--urgent] [--surge] [--codex-wait] [--pr-review] [--queue] [--prefer-sonnet] [--prefer-opus] [--desloppify] [--pipeline] [--force] <task>"
+    echo "  $(basename "$0") --until <HH:MM> [--urgent] [--surge] [--codex-wait] [--pr-review] [--queue] [--prefer-sonnet] [--prefer-opus] [--desloppify] [--pipeline] [--force] <task>"
     echo ""
     echo "Flags:"
     echo "  --urgent       Maximize budget threshold (95% vs default 80%)"
@@ -190,6 +203,8 @@ usage() {
     echo "  --queue        After task completes, pop next task from workqueue.yaml"
     echo "  --prefer-sonnet  Use Sonnet for all iterations (cost savings)"
     echo "  --prefer-opus    Use Opus for all iterations (max quality)"
+    echo "  --desloppify   Run desloppify scan during cooldown"
+    echo "  --pipeline     Multi-phase: iteration 1=research, 2+=implement, final=review"
     echo "  --force        Allow running even if another instance is active"
     echo ""
     echo "Examples:"
@@ -250,6 +265,10 @@ parse_args() {
                 ;;
             --desloppify)
                 DESLOPPIFY=true
+                shift
+                ;;
+            --pipeline)
+                PIPELINE=true
                 shift
                 ;;
             --help|-h)
@@ -957,7 +976,7 @@ run_codex_alignment_check() {
     fi
 
     local prompt
-    prompt="You are an alignment reviewer for an autonomous coding session.
+    prompt="You are an alignment reviewer for an autonomous technical session.
 Compare the TASK CONTRACT and ORIGINAL USER REQUEST against ACTUAL WORK DONE (git changes).
 
 Report one of: ON_TRACK, DRIFTING, or OFF_TRACK.
@@ -981,7 +1000,7 @@ STATUS: [ON_TRACK|DRIFTING|OFF_TRACK]
 ASSESSMENT: [1-2 sentence summary]
 CORRECTIVE_GUIDANCE: [only if DRIFTING/OFF_TRACK — specific instructions for next iteration]"
 
-    # Call Codex CLI (timeout 120s, read-only sandbox)
+    # Call Codex CLI (_timeout 120s, read-only sandbox)
     _timeout 120 codex --approval-policy never --sandbox read-only "$prompt" \
         > notes/codex-alignment.md 2>/dev/null || true
 
@@ -1001,15 +1020,43 @@ CORRECTIVE_GUIDANCE: [only if DRIFTING/OFF_TRACK — specific instructions for n
 # ─── Model Selection ──────────────────────────────────────────
 
 select_model() {
-    # Returns "opus" or "sonnet" based on user preference.
-    # Default: Opus for ALL iterations. Sonnet only as explicit user override.
-    # Priority: user override > default (opus)
+    # Returns "opus" or "sonnet" based on user preference and pipeline phase.
+    # Priority: user override > engine phase routing > default (opus)
     local iter_num="${1:-1}"
 
     # User override always wins
     if [ -n "$MODEL_PREFERENCE" ]; then
         echo "$MODEL_PREFERENCE"
         return
+    fi
+
+    # Pipeline phase-aware routing via execution engine
+    if [ "$PIPELINE" = true ] && [ -f "${EXECUTION_ENGINE:-}" ]; then
+        # Read current phase from state file (cyclic pipeline, not hardcoded iterations)
+        local phase_file="/tmp/timed-session-phase-${INSTANCE_ID:-$$}.txt"
+        local phase
+        if [ -f "$phase_file" ]; then
+            phase=$(cat "$phase_file")
+        elif [ "$iter_num" -eq 1 ]; then
+            phase="research"
+        else
+            phase="implement"
+        fi
+
+        local route_result
+        route_result=$(python3 "$EXECUTION_ENGINE" route "complex" "$phase" 2>/dev/null || echo "")
+        if [ -n "$route_result" ]; then
+            local routed_model
+            routed_model=$(echo "$route_result" | python3 -c "import sys,json; print(json.load(sys.stdin).get('model','claude'))" 2>/dev/null || echo "claude")
+            # Map engine model names to launcher model names
+            case "$routed_model" in
+                claude) echo "opus"; return ;;
+                codex)
+                    # Codex runs as a separate tool, not as a Claude model.
+                    # For launcher iterations, use opus but flag that Codex review should run.
+                    echo "opus"; return ;;
+            esac
+        fi
     fi
 
     # Default: Opus for all iterations (quality over cost savings)
@@ -1482,12 +1529,11 @@ pop_next_queue_task() {
         return 1
     fi
 
-    # Use conda env Python for PyYAML support
     local py="python3"
 
-    local result
-    result=$("$py" -c "
-import sys, json, shlex
+    local result_json
+    result_json=$("$py" -c "
+import sys, json
 try:
     import yaml
 except ImportError:
@@ -1530,30 +1576,54 @@ task['status'] = 'running'
 with open('$queue_file', 'w') as f:
     yaml.dump(data, f, default_flow_style=False, sort_keys=False)
 
-# Output task info as shell-parseable vars (shlex.quote for eval safety)
-print(f\"QUEUE_TASK_ID={shlex.quote(str(task.get('id', 'unknown')))}\")
-print(f\"QUEUE_TASK_PROJECT={shlex.quote(str(task.get('project', '.')))}\")
-print(f\"QUEUE_TASK_DESC={shlex.quote(str(task.get('description', 'queued task')))}\")
-print(f\"QUEUE_TASK_DURATION={task.get('duration_min', 60)}\")
-print(f\"QUEUE_TASK_CONTRACT={shlex.quote(str(task.get('contract', '')))}\")
-print(f\"QUEUE_BUDGET_CEILING={ceiling}\")
+# Output JSON payload for safe parsing in bash (no eval)
+print(json.dumps({
+    'id': str(task.get('id', 'unknown')),
+    'project': str(task.get('project', '.')),
+    'description': str(task.get('description', 'queued task')),
+    'duration_min': int(task.get('duration_min', 60) or 60),
+    'contract': str(task.get('contract', '')),
+    'budget_ceiling_5h': float(ceiling),
+}))
 " 2>/dev/null) || return 1
 
-    eval "$result"
+    local parsed
+    parsed=$("$py" -c "
+import json, sys
+try:
+    d = json.loads(sys.argv[1])
+except Exception:
+    sys.exit(1)
+print(d.get('id', 'unknown'))
+print(d.get('project', '.'))
+print(d.get('description', 'queued task'))
+print(int(d.get('duration_min', 60) or 60))
+print(d.get('contract', ''))
+print(d.get('budget_ceiling_5h', 40))
+" "$result_json" 2>/dev/null) || return 1
+
+    {
+        IFS= read -r QUEUE_TASK_ID
+        IFS= read -r QUEUE_TASK_PROJECT
+        IFS= read -r QUEUE_TASK_DESC
+        IFS= read -r QUEUE_TASK_DURATION
+        IFS= read -r QUEUE_TASK_CONTRACT
+        IFS= read -r QUEUE_BUDGET_CEILING
+    } <<< "$parsed"
     return 0
 }
 
 mark_queue_task_done() {
     # Mark the current queue task as completed (or partial if checker fails).
-    # Calls contract_completion_checker.py to verify promised artifacts exist.
+    # If an optional contract_completion_checker.py exists, use it for verification.
     local task_id="$1"
     local queue_file="$WORKQUEUE_FILE"
     [ ! -f "$queue_file" ] && return
 
     local py="python3"
 
-    # Run contract completion checker (fail-closed: errors → partial, not completed)
-    local checker="${HOME}/.claude/hooks/contract_completion_checker.py"
+    # Run optional contract completion checker (errors -> partial, missing checker -> completed)
+    local checker="${SCRIPTS_DIR}/contract_completion_checker.py"
     local final_status="completed"
     local checker_result=""
     if [ -f "$checker" ]; then
@@ -1636,12 +1706,62 @@ $([ "$(wc -c < "notes/task-contract.md" 2>/dev/null || echo 0)" -gt 2000 ] && ec
         fi
     fi
 
+    # Pipeline/autoresearch mode: phase-aware injection for first iteration
+    local pipeline_inject=""
+    local phase_file="/tmp/timed-session-phase-${INSTANCE_ID:-$$}.txt"
+    if [ "$PIPELINE" = true ]; then
+        if [ "${PIPELINE_STRATEGY:-}" = "autoresearch" ]; then
+            # Autoresearch mode: first iteration is setup
+            echo "setup" > "$phase_file"
+            pipeline_inject="
+═══ AUTORESEARCH MODE ═══
+This session runs an autonomous experiment loop (modify→run→eval→keep/discard).
+THIS IS ITERATION 1 — SETUP PHASE.
+
+Follow /autoresearch setup:
+1. Read docs/autoresearch-pattern.md if present
+2. Identify: eval harness (immutable metric), experiment file (agent-mutable), constraints
+3. Create branch: autoresearch/<tag>
+4. Initialize results.tsv with header
+5. Run baseline (unmodified) to establish starting metric
+6. Begin the experiment loop — NEVER STOP, loop until interrupted
+
+Your task: $TASK
+═══════════════════════════════
+"
+        else
+            # Standard pipeline: first iteration is research
+            echo "research" > "$phase_file"
+            pipeline_inject="
+═══ PIPELINE MODE ACTIVE (CYCLIC) ═══
+This session uses cyclic pipeline execution (research→implement→review→loop if needed).
+THIS IS ITERATION 1 — RESEARCH PHASE.
+
+Your ONLY job this iteration:
+1. Explore the codebase thoroughly (use subagents for parallel exploration)
+2. Research patterns, dependencies, edge cases
+3. Write notes/research-notes.md with architecture findings
+4. Write notes/implementation-plan.md with step-by-step plan:
+   - Files to modify/create
+   - Key functions/classes to implement
+   - Edge cases to handle
+   - Test strategy
+   - Estimated complexity per step
+5. Commit and push both files
+
+Do NOT write any implementation code. Research and plan ONLY.
+The next iteration will implement based on your plan.
+═══════════════════════════════
+"
+        fi
+    fi
+
     cat <<PROMPT
 You are running in an autonomous timed session via the launcher script.
 Timer: ${DURATION_MIN}min total, ~${remaining}min remaining | Mode: ${mode} | Budget threshold: ${BUDGET_THRESHOLD}%
 
 TASK: ${TASK}
-${contract_embed}
+${contract_embed}${pipeline_inject}
 Do NOT jump straight into coding. Follow these phases in order:
 
 ═══ PHASE 1: ASSESS (first ~5 minutes) ═══
@@ -1718,9 +1838,109 @@ build_continue_prompt() {
     local remaining
     remaining=$(get_remaining_min)
 
+    # Pipeline mode: inject phase-specific instructions for continuation iterations
+    # Phase is determined by execution engine (cyclic), not hardcoded iteration numbers
+    local pipeline_inject=""
+    local phase_file="/tmp/timed-session-phase-${INSTANCE_ID:-$$}.txt"
+    if [ "$PIPELINE" = true ]; then
+        local current_phase="implement"
+        if [ -f "$phase_file" ]; then
+            current_phase=$(cat "$phase_file")
+        fi
+
+        # Use execution engine to determine next phase based on previous verdict
+        local verdict_file="/tmp/timed-session-verdict-${INSTANCE_ID:-$$}.txt"
+        if [ -f "${EXECUTION_ENGINE:-}" ] && [ -f "$verdict_file" ]; then
+            local prev_verdict
+            prev_verdict=$(cat "$verdict_file")
+            local next_result
+            next_result=$(python3 "$EXECUTION_ENGINE" next-phase "$current_phase" "$prev_verdict" --strategy "${PIPELINE_STRATEGY:-pipeline}" 2>/dev/null || echo '{"phase":"implement"}')
+            current_phase=$(echo "$next_result" | python3 -c "import sys,json; print(json.load(sys.stdin).get('phase','implement'))" 2>/dev/null || echo "implement")
+            log "CYCLIC PIPELINE: $current_phase (from verdict: $prev_verdict)"
+            echo "$current_phase" > "$phase_file"
+            rm -f "$verdict_file"
+        fi
+
+        case "$current_phase" in
+            research)
+                pipeline_inject="
+═══ PIPELINE: RESEARCH PHASE (Iteration ${ITERATION}) ═══
+Review found issues requiring re-research. Re-examine the approach.
+
+1. Read notes/pipeline-review.md — what went wrong
+2. Re-explore the codebase with fresh eyes
+3. Update notes/research-notes.md with new findings
+4. Update notes/implementation-plan.md with revised approach
+5. Commit and push
+
+Do NOT implement yet — plan first, then next iteration implements.
+═══════════════════════════════════════════════════════════════════
+"
+                ;;
+            implement)
+                pipeline_inject="
+═══ PIPELINE: IMPLEMENTATION PHASE (Iteration ${ITERATION}) ═══
+Research is complete. Now IMPLEMENT based on the research.
+
+1. Read notes/research-notes.md — architecture findings
+2. Read notes/implementation-plan.md — your step-by-step plan
+3. Follow the plan step by step — deviate only if you find a clear error
+4. Write tests for every new function/class
+5. Commit and push each logical unit of work
+
+After implementation, if time remains: run Codex review (codex review --uncommitted).
+If Codex returns SUBSTANTIVE_ISSUES, address them before stopping.
+═══════════════════════════════════════════════════════════════════
+"
+                ;;
+            review)
+                pipeline_inject="
+═══ PIPELINE: REVIEW PHASE (Iteration ${ITERATION}) ═══
+Implementation is done. REVIEW and assess quality.
+
+1. Read notes/research-notes.md and notes/implementation-plan.md
+2. Review ALL code changes against the plan — were all steps implemented?
+3. Run full test suite — fix any failures
+4. Run Codex review (codex review --uncommitted) for cross-model quality check
+5. Address any issues found by Codex (max 3 rounds)
+6. Check edge cases, missing error handling, security
+7. Write notes/pipeline-review.md with verdict (APPROVE / NEEDS_CHANGES / DESIGN_FLAW)
+8. Write the verdict to the phase transition file so the next iteration routes correctly:
+   echo '<verdict>' > /tmp/timed-session-verdict-${INSTANCE_ID}.txt
+   - approve → session completes
+   - needs_changes → loops back to implement
+   - design_flaw → loops back to research
+═══════════════════════════════════════════════════════════════════
+"
+                ;;
+            experiment)
+                pipeline_inject="
+═══ AUTORESEARCH: EXPERIMENT LOOP (Iteration ${ITERATION}) ═══
+Continue the autonomous experiment loop. NEVER STOP.
+
+1. Read results.tsv — what experiments have been tried
+2. Read the eval harness and experiment file for new ideas
+3. Propose a change, commit, run, evaluate, keep/discard
+4. Log results to results.tsv
+5. Loop — do NOT ask if you should continue
+
+Your task: $TASK
+═══════════════════════════════════════════════════════════════════
+"
+                ;;
+            done)
+                pipeline_inject="
+═══ PIPELINE COMPLETE ═══
+Review approved. All phases done. Wrap up: final commit, push, write checkpoint.
+═══════════════════════════════════════════════════════════════════
+"
+                ;;
+        esac
+    fi
+
     cat <<PROMPT
 Continuing autonomous timed session. ~${remaining}min remaining (iteration ${ITERATION}).
-
+${pipeline_inject}
 ═══ PHASE 1: RECONNECT (~3 minutes) ═══
 1. Read notes/task-contract.md — your alignment boundaries
 2. Read notes/original-request.md — the user's original verbatim request (ALWAYS re-read this)
@@ -1742,8 +1962,12 @@ Continuing autonomous timed session. ~${remaining}min remaining (iteration ${ITE
 11. Read notes/desloppify-report.md if it exists — code quality scan from between iterations
     → If issues found: pick the top-priority issue and fix it this iteration
     → Use the exact guidance from the report for file, line, and fix approach
+12. Read notes/refinement-critique.json if it exists — cross-model refinement critique
+    → If SUBSTANTIVE_ISSUES: address ALL issues BEFORE continuing new work
+    → If MINOR_ISSUES: fix inline during this iteration
+    → If APPROVE: continue with confidence
 $(inject_active_issues)
-12. Run tests to verify current state matches the between-iteration report
+13. Run tests to verify current state matches the between-iteration report
 
 ═══ PHASE 2: ADJUST PLAN WITH INTENT CHAIN ═══
 Build the sequential reasoning chain at the top of notes/current-plan.md:
@@ -1855,8 +2079,45 @@ except: print('no')
     export TIMED_SESSION_INSTANCE="$INSTANCE_ID"
 
     # Start timer and mark as launcher-owned (with PID for cleanup safety)
-    python3 "$TIMER_SCRIPT" start "$DURATION_MIN"
     local timer_file="/tmp/claude-session-timer-${INSTANCE_ID}.json"
+    log "Creating timer: TIMED_SESSION_INSTANCE=$INSTANCE_ID -> $timer_file"
+    python3 "$TIMER_SCRIPT" start "$DURATION_MIN"
+    local timer_start_rc=$?
+    if [ "$timer_start_rc" -ne 0 ]; then
+        log "FATAL: Timer start failed with rc=$timer_start_rc"
+        exit 1
+    fi
+    if [ ! -f "$timer_file" ]; then
+        log "FATAL: Timer file not created at $timer_file despite rc=0"
+        log "  TIMED_SESSION_INSTANCE=$TIMED_SESSION_INSTANCE"
+        log "  INSTANCE_ID=$INSTANCE_ID"
+        log "  Files in /tmp/claude-session-timer-*:"
+        ls -la /tmp/claude-session-timer-*.json 2>&1 | while read line; do log "    $line"; done
+        # Check if it was created at the default path instead
+        if [ -f "/tmp/claude-session-timer.json" ]; then
+            log "  WARNING: Timer was created at DEFAULT path instead of instance path!"
+            log "  Moving /tmp/claude-session-timer.json -> $timer_file"
+            mv /tmp/claude-session-timer.json "$timer_file"
+        else
+            log "  Timer not at default path either. Creating manually."
+            python3 -c "
+import json, time
+data = {
+    'start_ts': time.time(),
+    'end_ts': time.time() + $DURATION_MIN * 60,
+    'duration_min': $DURATION_MIN,
+    'active': True,
+    'block_timestamps': [],
+    'iteration': 0,
+    'cwd': '$(pwd)'
+}
+with open('$timer_file', 'w') as f:
+    json.dump(data, f, indent=2)
+print('Timer manually created at $timer_file')
+"
+        fi
+    fi
+    # Add launcher ownership metadata
     python3 -c "
 import json, os
 with open('$timer_file') as f:
@@ -1865,7 +2126,13 @@ data['launcher'] = True
 data['launcher_pid'] = $$
 with open('$timer_file', 'w') as f:
     json.dump(data, f, indent=2)
-"
+" 2>&1 || log "WARNING: Failed to add launcher metadata to timer file"
+    # Final verification
+    if [ ! -f "$timer_file" ]; then
+        log "FATAL: Timer file still missing after all recovery attempts"
+        exit 1
+    fi
+    log "Timer file verified: $(cat "$timer_file" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(f"active={d.get(\"active\")}, duration={d.get(\"duration_min\")}min")' 2>/dev/null || echo 'UNREADABLE')"
 
     # Write initial checkpoint so Claude knows the task
     mkdir -p notes
@@ -1928,11 +2195,44 @@ write_surge_marker(
         log "FATAL: Cannot find 'claude' binary in any expected location"
         log "Checked: /usr/local/bin, /opt/homebrew/bin, ~/.local/bin, ~/.npm-global/bin, PATH"
         log "Install with: npm install -g @anthropic-ai/claude-code"
-        # Send notification about the failure
+        # Send local notification about the failure
         terminal-notifier -title "Claude Launcher FAILED" -message "claude binary not found" -sound Basso 2>/dev/null || true
         exit 1
     fi
     log "Claude binary: $CLAUDE_BIN"
+
+    # ─── Auto-classify task via unified execution engine ──────
+    local ENGINE="${SCRIPTS_DIR}/_execution_engine.py"
+    local auto_strategy="direct"
+    if [ "$PIPELINE" != true ] && [ -f "$ENGINE" ]; then
+        local classification
+        classification=$(python3 "$ENGINE" classify "$TASK" 2>/dev/null || echo '{}')
+        auto_strategy=$(echo "$classification" | python3 -c "import sys,json; print(json.load(sys.stdin).get('strategy','direct'))" 2>/dev/null || echo "direct")
+        local auto_reason
+        auto_reason=$(echo "$classification" | python3 -c "import sys,json; print(json.load(sys.stdin).get('reason',''))" 2>/dev/null || echo "")
+
+        if [ "$auto_strategy" = "pipeline" ]; then
+            PIPELINE=true
+            log "ENGINE: Auto-activated pipeline mode — $auto_reason"
+        elif [ "$auto_strategy" = "autoresearch" ]; then
+            PIPELINE=true  # Autoresearch uses pipeline infrastructure for phase injection
+            log "ENGINE: Auto-activated autoresearch mode — $auto_reason"
+        elif [ "$auto_strategy" = "bug_hunt" ]; then
+            PIPELINE=true  # Bug hunt uses pipeline infrastructure
+            log "ENGINE: Auto-activated bug hunt pipeline — $auto_reason"
+        elif [ "$auto_strategy" = "lightweight" ]; then
+            log "ENGINE: Lightweight mode (plan-then-code with review) — $auto_reason"
+        else
+            log "ENGINE: Direct mode — $auto_reason"
+        fi
+    elif [ "$PIPELINE" = true ]; then
+        log "Pipeline mode: explicitly enabled via --pipeline flag"
+    fi
+
+    # ─── Phase-aware model routing ────────────────────────────
+    # Store engine path for use in model selection and prompts
+    export EXECUTION_ENGINE="$ENGINE"
+    export PIPELINE_STRATEGY="${auto_strategy:-direct}"
 
     # Restart loop
     local consecutive_failures=0
@@ -1949,19 +2249,47 @@ write_surge_marker(
             break
         elif [ "$status" = "NO_TIMER" ]; then
             # In launcher context, NO_TIMER is abnormal — we just created the timer.
-            # Retry with direct file check before giving up.
+            # Retry with direct file check, and if first iteration, try recovery.
             log "WARNING: check_timer returned NO_TIMER unexpectedly"
-            local direct_status
-            direct_status=$(check_timer_file_directly)
-            log "Direct file check: status=$direct_status"
-            if [ "$direct_status" = "TIME_UP" ]; then
-                log "Timer expired (confirmed by direct check) — session complete"
-                break
-            elif [ "$direct_status" = "CONTINUE" ]; then
-                log "Timer still active (direct check). Proceeding despite NO_TIMER."
+            local timer_file="/tmp/claude-session-timer-${INSTANCE_ID}.json"
+            log "  Timer file exists: $([ -f "$timer_file" ] && echo 'YES' || echo 'NO')"
+            log "  TIMED_SESSION_INSTANCE=$TIMED_SESSION_INSTANCE"
+            log "  INSTANCE_ID=$INSTANCE_ID"
+
+            # On first iteration, wait briefly and retry (race condition mitigation)
+            if [ "$ITERATION" -eq 0 ]; then
+                log "First iteration NO_TIMER — waiting 2s and retrying..."
+                sleep 2
+                status=$(check_timer)
+                log "Retry after wait: status=$status"
+                if [ "$status" = "CONTINUE" ] || [ "$status" = "SPRINT" ] || [ "$status" = "CRUISE" ] || [ "$status" = "WRAP_UP" ]; then
+                    log "Timer recovered after retry. Proceeding."
+                elif [ ! -f "$timer_file" ]; then
+                    # Timer file truly gone — recreate it
+                    log "Timer file missing. Recreating timer for ${DURATION_MIN}min..."
+                    TIMED_SESSION_INSTANCE="$INSTANCE_ID" python3 "$TIMER_SCRIPT" start "$DURATION_MIN"
+                    if [ -f "$timer_file" ]; then
+                        log "Timer recreated successfully."
+                    else
+                        log "FATAL: Cannot create timer file. Exiting."
+                        break
+                    fi
+                else
+                    log "Timer file exists but not active. Continuing anyway."
+                fi
             else
-                log "Timer genuinely gone — session complete"
-                break
+                local direct_status
+                direct_status=$(check_timer_file_directly)
+                log "Direct file check: status=$direct_status"
+                if [ "$direct_status" = "TIME_UP" ]; then
+                    log "Timer expired (confirmed by direct check) — session complete"
+                    break
+                elif [ "$direct_status" = "CONTINUE" ]; then
+                    log "Timer still active (direct check). Proceeding despite NO_TIMER."
+                else
+                    log "Timer genuinely gone — session complete"
+                    break
+                fi
             fi
         fi
 
@@ -2076,11 +2404,9 @@ print(count)
 " 2>/dev/null || echo "0")
         fi
 
-        local was_stall=false
         if [ "$exit_code" -eq 0 ] && [ "$exec_secs" -gt 120 ] && [ "$tool_count" -eq 0 ]; then
             log "STALL DETECTED: Ran ${exec_secs}s but produced 0 tool calls"
             log "This iteration was unproductive — Claude may have been stuck"
-            was_stall=true
             consecutive_failures=$((consecutive_failures + 1))
             if [ "$consecutive_failures" -ge 2 ]; then
                 log "Multiple stalled iterations — ending session to avoid wasting time"
@@ -2211,8 +2537,7 @@ else:
                 terminal-notifier -title "Claude Launcher" -message "Session ended: ${consecutive_failures} consecutive errors" -sound Basso 2>/dev/null || true
                 break
             fi
-        elif [ "$was_stall" = false ]; then
-            # Only reset on clean exit — don't reset if stall detection already incremented
+        else
             consecutive_failures=0
         fi
 
@@ -2334,6 +2659,42 @@ print(max(0, int(d['end_ts'] - time.time())))
             run_desloppify_during_wait "$cooldown"
         fi
 
+        # Run refinement critique (pipeline mode, iteration 2+)
+        # Brings conductor's cross-model refinement into launched sessions
+        if [ "$PIPELINE" = true ] && [ "$ITERATION" -ge 2 ] && [ -f "${EXECUTION_ENGINE:-}" ]; then
+            if should_use_codex; then
+                log "Running cross-model refinement critique (pipeline iter $ITERATION)..."
+                local critique_model="codex"
+                if [ "$model" = "sonnet" ] || [ "$model" = "opus" ]; then
+                    critique_model="codex"  # Claude produced → Codex critiques
+                fi
+                local round_num=$((ITERATION - 1))
+                local critique_timeout=120
+                (
+                    _timeout "$critique_timeout" codex exec -s read-only --json \
+                        "You are reviewing code changes from an autonomous session.
+
+Review ALL uncommitted changes and recent commits. Produce a structured critique:
+
+1. Verdict: APPROVE, MINOR_ISSUES, or SUBSTANTIVE_ISSUES
+2. Issues found: list each with severity (critical/high/medium/low)
+3. Suggestions: concrete, actionable improvements
+4. Score: 1-10 quality rating
+
+Write your review as JSON to stdout:
+{\"verdict\": \"...\", \"score\": N, \"issues\": [{\"severity\": \"...\", \"description\": \"...\", \"file\": \"...\", \"suggestion\": \"...\"}], \"summary\": \"...\"}" \
+                        > "notes/refinement-critique.json" 2>/dev/null
+                ) &
+                local refine_pid=$!
+                wait "$refine_pid" 2>/dev/null || true
+                if [ -f "notes/refinement-critique.json" ] && [ -s "notes/refinement-critique.json" ]; then
+                    log "Refinement critique saved to notes/refinement-critique.json"
+                else
+                    log "Refinement critique: no output (skipped or timed out)"
+                fi
+            fi
+        fi
+
         # Run test suite gate (always — tests are fundamental to every iteration)
         run_test_suite_gate
 
@@ -2372,7 +2733,7 @@ clear_surge_marker()
 
     # Compute total cost from all iteration cost lines
     local total_cost
-    total_cost=$(grep -oE 'Cost: \$[0-9.]+' "$LAUNCHER_LOG" 2>/dev/null | grep -oE '[0-9.]+$' | awk '{s+=$1}END{printf "%.2f",s}' || echo "?")
+    total_cost=$(grep -oP 'Cost: \$\K[\d.]+' "$LAUNCHER_LOG" 2>/dev/null | awk '{s+=$1}END{printf "%.2f",s}' || echo "?")
 
     log "═══════════════════════════════════════════════════"
     log "Timed session COMPLETE"
@@ -2383,7 +2744,7 @@ clear_surge_marker()
     log "  Instance: ${INSTANCE_ID}"
     log "═══════════════════════════════════════════════════"
 
-    # ─── Write session completion summary ───
+    # ─── Write session completion summary for Telegram bot pickup ───
     local summary_file="/tmp/timed-session-done-${INSTANCE_ID}.json"
     local last_text=""
     if [ -f "$STREAM_LOG" ] && [ -s "$STREAM_LOG" ]; then
@@ -2426,8 +2787,6 @@ with open('${summary_file}', 'w') as f:
         if [ -n "${QUEUE_TASK_ID:-}" ]; then
             mark_queue_task_done "$QUEUE_TASK_ID"
             log "Marked queue task '$QUEUE_TASK_ID' as completed"
-
-            log "Queue task '$QUEUE_TASK_ID' completed"
         fi
 
         # Check budget before popping next task
@@ -2439,9 +2798,9 @@ with open('${summary_file}', 'w') as f:
             log "  Project: ${QUEUE_TASK_PROJECT}"
             log "  Duration: ${QUEUE_TASK_DURATION}min"
 
-            # Budget prediction: estimate consumption before launching (optional)
+            # Budget prediction: estimate consumption before launching
             local py="python3"
-            local predictor="${HOME}/.claude/daemon/budget_predictor.py"
+            local predictor="${SCRIPTS_DIR}/_budget_predictor.py"
             if [ -f "$predictor" ]; then
                 local task_json
                 task_json=$("$py" -c "

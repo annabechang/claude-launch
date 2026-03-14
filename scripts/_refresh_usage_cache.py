@@ -17,7 +17,7 @@ import sys
 import time
 
 CACHE_FILE = "/tmp/claude-usage-cache.json"
-DEFAULT_MAX_AGE = 1800  # seconds (30 min — conservative to minimize API calls)
+DEFAULT_MAX_AGE = 300  # seconds (5 min to avoid rate limits)
 
 
 def refresh_cache(max_age=DEFAULT_MAX_AGE):

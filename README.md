@@ -1,188 +1,146 @@
 # claude-launch
 
-Fire-and-forget autonomous Claude Code sessions with task contracts, alignment checking, and time budgets.
+## Contribution
+
+This project contributes an autonomous launcher for open-ended technical work that tends to drift.
+
+1. It keeps long-running work aligned using contract-first scope control (goal, NOT-goals, success criteria) plus iterative alignment checks.
+2. It runs one or more detached headless Claude sessions (parallel when needed) toward the target outcome, with optional headless Codex review loops for quality/alignment.
+3. It gives operators continuous control: run by time budget, intervene any time (`attach/stop/kill`), and feed updated guidance between iterations.
+
+## Why this exists
+
+Most automation loops optimize for persistence ("keep going").
+This project optimizes for **intent fidelity under autonomy**:
+
+- Clarify intent before launch.
+- Convert intent into a concrete contract.
+- Keep checking alignment while the agent runs unattended.
+- Enforce time and budget guardrails across restarts.
+
+## What is distinctive here
+
+1. **Anti-drift by design**
+- NOT-goals are required and treated as first-class constraints.
+- Contract and original request are embedded into iteration prompts.
+- Alignment checks run during cooldowns and feed corrective guidance back in.
+
+2. **Autonomous time + budget control**
+- Detached session management with timer states.
+- Budget-aware pacing (`SPRINT/CRUISE/WRAP_UP`) and optional SURGE mode.
+- Rate-limit aware restart loop with `--continue` recovery.
+
+3. **Cross-session operational control**
+- List/attach/stop/kill/cleanup commands for all live sessions.
+- Real-time stream monitor and summary parsing.
+- Optional queue mode for back-to-back task execution.
+
+4. **Handles non-deterministic tasks better than pure "loop" tools**
+- Better for design/refactor/research-heavy tasks where scope can drift.
+- Pipeline mode (`--pipeline`) supports research -> implement -> review cycles.
 
 
-
-## The problem
-
-Autonomous coding sessions drift. You say "improve the platform" and come back to find Claude refactored your database schema. `/launch` prevents this with explicit NOT-goals, success criteria, and periodic alignment checks.
 
 ## Quick start
 
 ```bash
-# Install
 git clone https://github.com/rongstuff/claude-launch.git
 cd claude-launch
 chmod +x install.sh && ./install.sh
-
-# Use (inside any Claude Code session)
-/launch 60 "Add WebSocket reconnection with exponential backoff"
-/launch --until 09:00 "Improve test coverage for the auth module"
-/launch 120 --surge "Maximize overnight throughput"
 ```
 
-### Option: Make your own
+Inside any Claude Code session:
 
-The core ideas fit in a prompt. Tell your coding agent:
-
-> Implement a fire-and-forget autonomous session launcher for Claude Code according to this spec:
-> [commands/launch.md](commands/launch.md)
-
-The [`commands/launch.md`](commands/launch.md) file is the spec — it defines the 8-phase workflow. Everything in `scripts/` is one implementation of that spec.
+```bash
+/launch 60 "Add WebSocket reconnection with exponential backoff"
+/launch --until 09:00 "Improve test coverage for auth"
+/launch 120 --surge "Maximize overnight throughput"
+/launch 180 --pipeline "Refactor auth into staged migration"
+```
 
 ## Requirements
 
-### Required
+- **Required**: Claude Code CLI (`claude`) and Python 3.10+.
+- **Required for Codex review/alignment features**: Codex CLI (`codex`) installed and available on `PATH`.
+- **Optional but recommended**: `tmux` for attachable detached sessions (otherwise launcher falls back to `nohup`).
 
-| Dependency | Why | Install |
-|-----------|-----|---------|
-| **Claude Code CLI** | The coding agent that runs inside sessions | `npm install -g @anthropic-ai/claude-code` |
-| **Python 3.10+** | Timer, budget tracking, usage cache (stdlib only) | Pre-installed on most systems |
+## System workflow
 
-### Required for full functionality
+### 1. Launch workflow (intent -> contract -> run)
 
-| Dependency | Why | Install |
-|-----------|-----|---------|
-| **Codex CLI** | Cross-model alignment review during cooldowns. Without this, sessions still run but skip the alignment check — the #1 anti-drift mechanism. | [Install Codex](https://github.com/openai/codex) and ensure `codex` is in PATH |
-| **tmux** | Named sessions you can attach/detach. Without this, sessions use nohup (not attachable). | `brew install tmux` (macOS) / `apt install tmux` (Linux) |
+1. Parse duration, flags, and task input from `/launch`.
+2. Gather project context (`git`, notes, status files).
+3. Clarify intent with the user, especially NOT-goals.
+4. Generate `notes/task-contract.md` as the scope source of truth.
+5. Run a Codex contract review for drift/blind-spot checks.
+6. Get explicit user approval.
+7. Start detached session runtime (`tmux` or `nohup` fallback).
 
-### Optional
+### 2. Runtime workflow (headless iteration loop)
 
-| Dependency | Why | Install |
-|-----------|-----|---------|
-| **timeout / gtimeout** | Time-limited subprocess execution (Codex review, test gates). Falls back to no-timeout if missing. | `brew install coreutils` (macOS) / pre-installed (Linux) |
-| **PyYAML** | Only for `--queue` mode (workqueue.yaml parsing) | `pip install pyyaml` |
-| **terminal-notifier** | macOS desktop notifications on session complete | `brew install terminal-notifier` |
+1. Start a per-session timer and budget guardrails.
+2. Run headless Claude (`claude -p`) for the next iteration.
+3. On stop/rate-limit/exit, collect status and evaluate next action.
+4. During cooldown windows, optionally run headless Codex checks/reviews.
+5. Inject alignment corrections into the next Claude iteration when needed.
+6. Repeat until timer expires, contract is complete, or user stops the session.
 
-### Platform notes
+### 3. Control workflow (multi-session operations)
 
-The launcher reads Claude's OAuth token from **macOS Keychain** to query usage data for budget tracking. Linux is not currently supported for usage tracking — sessions will still run but without budget-aware cooldown optimization.
-
-## `/launch` vs `/loop`
-
-These solve different problems and work well together.
-
-| | `/launch` | `/loop` |
-|---|---|---|
-| **What it does** | Structures intent → generates contract → launches detached session | Re-feeds the same prompt every time Claude tries to stop |
-| **Runs where** | Detached tmux session (fire-and-forget, walk away) | Current terminal session (blocks your terminal) |
-| **Anti-drift** | Task contract + NOT-goals + Codex alignment review between iterations | Completion promise only ("keep going until done") |
-| **Budget** | Time budget + usage API tracking + SURGE mode | Iteration count only |
-| **Handles rate limits** | Yes — detects exit, computes cooldown, restarts with `--continue` | No — session ends on rate limit |
-| **Best for** | Ambiguous or large tasks where you walk away | Well-defined tasks with clear pass/fail ("fix all failing tests") |
-
-**Use together:** `/launch` structures the task and runs it detached. Inside the detached session, a stop hook keeps Claude working (similar to `/loop`) until the time budget expires or the contract is complete.
-
-**When to use which:**
-- "Run this overnight while I sleep" → `/launch`
-- "Keep iterating until tests pass" → `/loop`
-- "Work on this for 2 hours, check alignment every iteration" → `/launch --codex-wait`
-
-## How it works
-
-The `/launch` command runs an 8-phase workflow:
-
-1. **Parse** — Extract duration, flags, and task description
-2. **Gather context** — Read PROJECT_STATUS.md, git log, checkpoints
-3. **Clarify intent** — Ask targeted questions, especially **NOT-goals** (the #1 anti-drift mechanism)
-4. **Generate task contract** — Write `notes/task-contract.md` as the session's source of truth
-5. **Cross-model review** — Codex reviews the contract for blind spots
-6. **User approval** — You confirm before anything launches
-7. **Launch** — Detached tmux session with restart loop and budget management
-8. **Management** — List, attach, stop, kill, monitor sessions
-
-### Architecture
-
-The launcher wraps `claude -p` (non-interactive mode) in a restart loop:
-
-```
-┌─────────────────────────────────────────┐
-│  tmux session: claude-{ID}              │
-│                                         │
-│  ┌─ Restart Loop ────────────────────┐  │
-│  │                                   │  │
-│  │  1. Check timer (time remaining?) │  │
-│  │  2. Check budget (usage %)        │  │
-│  │  3. Run claude -p --continue      │  │
-│  │  4. Claude exits (rate limit)     │  │
-│  │  5. Compute cooldown              │  │
-│  │  6. [Optional] Codex review       │  │
-│  │  7. Sleep cooldown                │  │
-│  │  8. Go to 1                       │  │
-│  │                                   │  │
-│  └───────────────────────────────────┘  │
-│                                         │
-└─────────────────────────────────────────┘
-```
-
-Rate limits cause clean exits in `-p` mode. The wrapper detects this, waits for the 5-hour window to decay, then restarts with `--continue` to resume work.
+1. `timed_session_manage.sh list` shows all known sessions and health.
+2. `attach/stop/kill/cleanup` provide operational control.
+3. `timed_session_monitor.sh` streams live progress and summary stats.
+4. Multiple launcher instances can run in parallel; each gets its own instance ID, logs, and timer state.
 
 ## Flags
 
-| Flag | Effect |
-|------|--------|
-| `--urgent` | Maximize budget threshold (95% vs default 80%) |
-| `--surge` | Push utilization to dynamic soft target with stall/resume |
-| `--codex-wait` | Run Codex review during cooldown periods (auto-added by /launch) |
-| `--pr-review` | Create PR and use Codex GitHub review loop during cooldown |
-| `--queue` | After task completes, pop next task from workqueue |
-| `--prefer-sonnet` | Use Sonnet for iterations (cost savings) |
-| `--prefer-opus` | Use Opus for iterations (max quality) |
-| `--desloppify` | Run desloppify code quality scan during cooldown |
+| Flag | Purpose |
+|---|---|
+| `--urgent` | Raise budget threshold (95%) |
+| `--surge` | Aggressive budget utilization with stall/resume controls |
+| `--codex-wait` | Run Codex review during cooldown windows |
+| `--pr-review` | Run Codex GitHub PR review loop during cooldown |
+| `--queue` | Pop next task from queue after completion |
+| `--prefer-sonnet` | Force Sonnet iterations |
+| `--prefer-opus` | Force Opus iterations |
+| `--desloppify` | Run desloppify checks during cooldown |
+| `--pipeline` | Enable cyclic research -> implement -> review execution |
+| `--force` | Allow launch even if another timed session is active |
 
-## Session management
+## Script Reference
 
-```bash
-# View all sessions
-~/.claude/scripts/timed_session_manage.sh list
+The launcher is intentionally script-first. Each file has one operational responsibility.
 
-# Attach to see live output
-~/.claude/scripts/timed_session_manage.sh attach <ID>
+| Script | Role |
+|---|---|
+| `scripts/timed_session_launcher.sh` | Main runtime. Parses args, starts detached session, manages restart loop, budget/timer logic, pipeline phases, cooldown work, and queue chaining. |
+| `scripts/timed_session_manage.sh` | Session control plane (`list`, `attach`, `stop`, `kill`, `cleanup`). |
+| `scripts/timed_session_monitor.sh` | Live stream parser and summary monitor for active session logs. |
+| `scripts/_session_timer.py` | Timer state machine for `CONTINUE/WRAP_UP/TIME_UP` decisions and per-instance timer files. |
+| `scripts/_refresh_usage_cache.py` | Refreshes Claude usage cache from OAuth usage endpoint (for budget decisions in `-p` mode). |
+| `scripts/_budget_common.py` | Shared budget phase helpers and marker utilities. |
+| `scripts/_execution_engine.py` | Strategy/phase routing engine used by pipeline mode and model routing logic. |
+| `scripts/_budget_predictor.py` | Queue-task budget estimator used before chaining the next task. |
 
-# Graceful stop (finishes current iteration)
-~/.claude/scripts/timed_session_manage.sh stop <ID>
+## Security note
 
-# Force stop
-~/.claude/scripts/timed_session_manage.sh kill <ID>
-
-# Clean up orphaned sessions
-~/.claude/scripts/timed_session_manage.sh cleanup
-
-# Real-time progress stream
-~/.claude/scripts/timed_session_monitor.sh
-
-# Quick status summary
-~/.claude/scripts/timed_session_monitor.sh --summary
-```
-
-## Security
-
-Sessions run with `--dangerously-skip-permissions` by default, which is required for autonomous operation. Review the generated task contract before approving launch. Sessions execute in your user security context with full file system and network access.
+- Sessions run with `--dangerously-skip-permissions` to support autonomous operation.
+- Treat this as **full user-context execution** (file system + network privileges of your user).
+- Always review task contract before launch.
 
 ## Acknowledgements
 
-Patterns and concepts implemented in this codebase:
+Patterns and concepts in this codebase were influenced by:
 
-**Architecture & Session Management**
-- [Boris Cherny](https://github.com/anthropics/claude-code) — Claude Code's `-p` mode, `--continue`, and stream-json output make the restart loop possible
-- [Anthropic](https://docs.anthropic.com) — Rate limit bucket modeling (5-hour rolling window) used in cooldown calculation and budget tracking
+- [Anthropic Claude Code CLI reference](https://code.claude.com/docs/en/cli-reference): `-p` print mode, `--continue`, and `--output-format=stream-json` capabilities used by launcher runtime design.
+- [Anthropic API rate limits docs](https://platform.claude.com/docs/en/api/rate-limits): model/rate-limit constraints that inform cooldown and budget-aware behavior.
+- [Garry Tan's plan-exit-review skill gist](https://gist.github.com/garrytan/001f9074cab1a8f545ebecbc73a813df): "Scope Challenge" and explicit "NOT in scope" review structure used as anti-drift planning influence.
+- [OpenAI Symphony](https://github.com/openai/symphony): "manage work, not agents" framing and isolated autonomous run orchestration influence.
 
-**Anti-Drift & Alignment**
-- [Garry Tan](https://gist.github.com/garrytan/001f9074cab1a8f545ebecbc73a813df) — NOT-goals as the primary anti-drift mechanism, scope challenge questions in the task contract
-- Leo ([@runes_leo](https://x.com/runes_leo)) — Phase-tiered delegation matrix: when to use Codex review vs ship on passing tests
-- Eno Reyes ([@EnoReyes](https://x.com/EnoReyes)) — "Encoded taste": phase guidance rules and checkpoint policies as programmatic judgment
-
-**Design Influences**
-- [Stripe Engineering](https://stripe.com) — Context pre-hydration (gather project state before clarifying intent), scoped delegation matrix
-- [OpenAI Symphony](https://github.com/openai/symphony) — Spec-as-contract pattern (launch.md defines the workflow, scripts/ implements it)
-- [OpenAI](https://openai.com) (Ryan Lopopolo) — "Harness Engineering" framing reflected in timer phases, budget phases, and SURGE mode
 
 ## License
 
 MIT
 
-
-
 > [!WARNING]
-> This codebase was largely written by Claude Code (with human oversight and review). It may contain bugs, edge cases, or assumptions that don't hold in your environment. Review before trusting it with production work.
+> This codebase is automation-heavy, environment-sensitive, and substantially vibe-coded. Use with caution, review prompts/contracts/logs before running on sensitive repositories, and use Claude/Codex to adapt it to your own workflow rather than treating it as drop-in production automation.

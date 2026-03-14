@@ -90,6 +90,11 @@ def cmd_start(minutes):
     """Start a new timed session."""
     now = time.time()
     duration_secs = minutes * 60
+    try:
+        cwd = os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
+    except (PermissionError, OSError):
+        # macOS sandboxing: tmux sessions may lack Dropbox/iCloud directory access
+        cwd = os.environ.get("PWD", "/tmp")
     data = {
         "start_ts": now,
         "end_ts": now + duration_secs,
@@ -97,7 +102,7 @@ def cmd_start(minutes):
         "active": True,
         "block_timestamps": [],
         "iteration": 0,
-        "cwd": os.environ.get("CLAUDE_PROJECT_DIR", os.getcwd()),
+        "cwd": cwd,
     }
     write_timer(data)
     end_time = datetime.fromtimestamp(now + duration_secs, tz=timezone.utc)

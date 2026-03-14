@@ -40,7 +40,8 @@ fi
 if command -v codex &>/dev/null; then
     echo "  codex: found (enables Codex alignment review during cooldowns)"
 else
-    echo "  codex: not found (optional, enables Codex alignment review during cooldowns)"
+    echo "  codex: not found (required for Codex review/alignment features)"
+    echo "  Sessions still run without codex, but Codex review checks will be skipped."
 fi
 
 if command -v timeout &>/dev/null; then
@@ -66,8 +67,22 @@ for script in \
     _session_timer.py \
     _refresh_usage_cache.py \
     _budget_common.py; do
+    if [ ! -f "$REPO_DIR/scripts/$script" ]; then
+        echo "ERROR: Missing required script: scripts/$script"
+        exit 1
+    fi
     cp "$REPO_DIR/scripts/$script" "$SCRIPTS_DEST/$script"
     echo "  $script"
+done
+
+# Optional advanced helpers
+for script in _execution_engine.py _budget_predictor.py; do
+    if [ -f "$REPO_DIR/scripts/$script" ]; then
+        cp "$REPO_DIR/scripts/$script" "$SCRIPTS_DEST/$script"
+        echo "  $script"
+    else
+        echo "  $script (optional, not found; advanced pipeline/queue prediction features will be limited)"
+    fi
 done
 
 # Make shell scripts executable
