@@ -46,7 +46,7 @@ This project optimizes for **intent fidelity under autonomy**:
 ## Quick start
 
 ```bash
-git clone https://github.com/rongstuff/claude-launch.git
+git clone https://github.com/annabechang/claude-launch.git
 cd claude-launch
 chmod +x install.sh && ./install.sh
 ```
