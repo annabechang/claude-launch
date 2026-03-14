@@ -1415,13 +1415,10 @@ SECREPORT
 # ─── State File Cleanup ──────────────────────────────────────
 
 cleanup_stale_state() {
-    # Clean up any stale state files from previous runs
+    # Clean up any stale state files from previous launcher runs
     local work_dir="$1"
-    local stale_file="${work_dir}/.claude/ralph-loop.local.md"
-    if [ -f "$stale_file" ]; then
-        rm -f "$stale_file" 2>/dev/null || true
-        log "Stale state file removed: $stale_file"
-    fi
+    # Nothing to clean currently — placeholder for future state files
+    :
 }
 
 # ─── Progress Summary ───────────────────────────────────────
@@ -1774,7 +1771,7 @@ Step B — Decompose into ordered work items:
 4. Budget time: don't plan more than 80% of remaining time
 
 Step C — Codex plan review (if budget allows):
-  Call Codex (mcp__codex__codex) with sandbox=read-only to review your plan:
+  Call Codex CLI (codex --approval-policy never --sandbox read-only) to review your plan:
   "Review this plan against the user's intent. Is every item aligned? Any drift risks?"
   If Codex flags issues, adjust the plan before executing.
 
@@ -1970,7 +1967,7 @@ Then adjust:
 2. If Codex flagged DRIFTING or OFF_TRACK, correct course BEFORE continuing
 3. Update notes/current-plan.md — reorder, add, or remove items based on new context
 4. If plan is complete, generate new items from the task contract
-5. Call Codex (mcp__codex__codex, sandbox=read-only) to review adjusted plan if budget allows
+5. Call Codex CLI (codex --approval-policy never --sandbox read-only) to review adjusted plan if budget allows
 
 ═══ PHASE 3: EXECUTE ═══
 1. Resume work through plan items in order
@@ -2588,15 +2585,6 @@ print(max(0, int(d['end_ts'] - time.time())))
         # Skip restart if remaining time < cooldown (includes jitter)
         if [ "$remaining_secs" -lt "$cooldown" ]; then
             log "Remaining time (${remaining}min) < cooldown (${cooldown}s incl jitter) — ending session"
-            # Start auto-resume watcher if rate-limited (will spawn new session after reset)
-            if [ "$is_rate_limit" = true ] || [ "$exit_type" = "RATE_LIMITED" ]; then
-                local watcher_script="$SCRIPTS_DIR/auto_resume_watcher.sh"
-                if [ -x "$watcher_script" ]; then
-                    "$watcher_script" --project "$(pwd)" --threshold 50 --poll 300 --max-wait "$cooldown" &
-                    disown $! 2>/dev/null || true
-                    log "Auto-resume watcher started (will spawn new session after budget recovery)"
-                fi
-            fi
             break
         fi
 
@@ -2705,7 +2693,7 @@ clear_surge_marker()
 
     # Compute total cost from all iteration cost lines
     local total_cost
-    total_cost=$(grep -oP 'Cost: \$\K[\d.]+' "$LAUNCHER_LOG" 2>/dev/null | awk '{s+=$1}END{printf "%.2f",s}' || echo "?")
+    total_cost=$(grep -oE 'Cost: \$[0-9.]+' "$LAUNCHER_LOG" 2>/dev/null | grep -oE '[0-9.]+' | awk '{s+=$1}END{printf "%.2f",s}' || echo "?")
 
     log "═══════════════════════════════════════════════════"
     log "Timed session COMPLETE"
@@ -2716,7 +2704,7 @@ clear_surge_marker()
     log "  Instance: ${INSTANCE_ID}"
     log "═══════════════════════════════════════════════════"
 
-    # ─── Write session completion summary for Telegram bot pickup ───
+    # ─── Write session completion summary (JSON for external integrations) ───
     local summary_file="/tmp/timed-session-done-${INSTANCE_ID}.json"
     local last_text=""
     if [ -f "$STREAM_LOG" ] && [ -s "$STREAM_LOG" ]; then
