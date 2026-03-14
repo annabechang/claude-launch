@@ -64,6 +64,23 @@ Inside any Claude Code session:
 - **Required for Codex review/alignment features**: Codex CLI (`codex`) installed and available on `PATH`.
 - **Optional but recommended**: `tmux` for attachable detached sessions (otherwise launcher falls back to `nohup`).
 
+### Optional dependencies
+
+| Dependency | Used by | Install |
+|---|---|---|
+| `gh` (GitHub CLI) | `--pr-review` flag | `brew install gh` |
+| `PyYAML` | `--queue` mode (workqueue.yaml) | `pip install pyyaml` |
+| `terminal-notifier` | macOS desktop notifications on session events | `brew install terminal-notifier` |
+| `desloppify` | `--desloppify` code quality scans | `pip install desloppify[full]` |
+| `coreutils` | `timeout` for subprocess time limits on macOS | `brew install coreutils` |
+
+All optional — each feature degrades gracefully if its dependency is missing.
+
+### Platform notes
+
+- **macOS**: Fully supported. Budget-aware pacing uses the macOS Keychain (`security find-generic-password`) to read your Claude OAuth token for usage API calls. This enables automatic cooldown timing and SURGE mode.
+- **Linux**: Core launcher, timer, and session management work. Budget-aware features (`_refresh_usage_cache.py`) require adapting the OAuth token retrieval to your credential store — the Keychain call will silently fail and budget checks will be skipped.
+
 ## System workflow
 
 ### 1. Launch workflow (intent -> contract -> run)

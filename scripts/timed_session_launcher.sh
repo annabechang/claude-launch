@@ -370,8 +370,8 @@ cleanup() {
         wait "$CODEX_PID" 2>/dev/null || true
     fi
 
-    # Deactivate Ralph Loop
-    cleanup_ralph_loop "$(pwd)"
+    # Clean up any stale state files
+    cleanup_stale_state "$(pwd)"
 
     # Only stop timer if we own it (check launcher_pid matches)
     local timer_file="/tmp/claude-session-timer-${INSTANCE_ID}.json"
@@ -1412,31 +1412,15 @@ SECREPORT
     log "Security scan: ${status}"
 }
 
-# ─── Ralph Loop State ───────────────────────────────────────
+# ─── State File Cleanup ──────────────────────────────────────
 
-init_ralph_loop() {
-    # Initialize Ralph Loop state file for stop hook integration.
-    # IMPORTANT: We no longer create .claude/ralph-loop.local.md because it's
-    # project-scoped and blocks ALL Claude sessions in the directory, including
-    # interactive ones. The Ralph Loop plugin's stop hook has NO debounce.
-    #
-    # Instead, the launcher relies on timed_session_stop.py (which HAS debounce
-    # and is instance-scoped via TIMED_SESSION_INSTANCE env var).
-    #
-    # The Ralph Loop state file is only useful if Ralph Loop plugin is needed
-    # for additional stop-blocking beyond what timed_session_stop.py provides.
-    # For launcher sessions, timed_session_stop.py is sufficient.
+cleanup_stale_state() {
+    # Clean up any stale state files from previous runs
     local work_dir="$1"
-    log "Ralph Loop init SKIPPED (relying on timed_session_stop.py for stop blocking)"
-}
-
-cleanup_ralph_loop() {
-    # Clean up any stale ralph-loop.local.md that might exist from previous runs
-    local work_dir="$1"
-    local ralph_file="${work_dir}/.claude/ralph-loop.local.md"
-    if [ -f "$ralph_file" ]; then
-        rm -f "$ralph_file" 2>/dev/null || true
-        log "Stale Ralph Loop state file removed"
+    local stale_file="${work_dir}/.claude/ralph-loop.local.md"
+    if [ -f "$stale_file" ]; then
+        rm -f "$stale_file" 2>/dev/null || true
+        log "Stale state file removed: $stale_file"
     fi
 }
 
@@ -2148,10 +2132,7 @@ EOF
 
     log "Timer started, checkpoint written"
 
-    # Initialize Ralph Loop for stop hook integration
-    init_ralph_loop "$(pwd)"
-
-    # Export env vars for timed_session_stop.py
+    # Export env vars for stop hook integration
     export TIMED_SESSION_BUDGET_THRESHOLD="$BUDGET_THRESHOLD"
     export TIMED_SESSION_LAUNCHER="1"  # tells stop hook this is a launcher session
     export TIMED_SESSION_INSTANCE="$INSTANCE_ID"  # tells stop hook which timer file to read
@@ -2173,15 +2154,6 @@ write_surge_marker(
 )
 " 2>/dev/null || true
         log "SURGE marker written (soft:${SURGE_SOFT_TARGET}% hard:${SURGE_HARD_CAP}% resume:${SURGE_RESUME_TARGET}%)"
-    fi
-
-    # Start monitor daemon in background (writes periodic summaries to file)
-    local monitor_script="$SCRIPTS_DIR/session_monitor_daemon.sh"
-    if [ -x "$monitor_script" ]; then
-        "$monitor_script" --instance "$INSTANCE_ID" --interval 600 --notify &
-        local monitor_pid=$!
-        disown "$monitor_pid" 2>/dev/null || true
-        log "Monitor daemon started (PID $monitor_pid, interval 600s)"
     fi
 
     # Unset CLAUDECODE to allow nested invocation
@@ -2709,8 +2681,8 @@ Write your review as JSON to stdout:
         sleep "$cooldown"
     done
 
-    # Deactivate Ralph Loop
-    cleanup_ralph_loop "$(pwd)"
+    # Clean up stale state files
+    cleanup_stale_state "$(pwd)"
 
     # Clean up SURGE marker if we wrote it
     if [ "$SURGE" = true ]; then

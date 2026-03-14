@@ -9,15 +9,15 @@ Provides:
   - Prompt generation (high-quality, phase-aware)
 
 CLI usage (for bash callers like the launcher):
-  python3 execution_engine.py classify "task description"
-  python3 execution_engine.py route <task_type> <phase> [--budget-pct N]
-  python3 execution_engine.py next-phase <current_phase> <verdict>
-  python3 execution_engine.py should-refine <task_type> <round> [--max N]
-  python3 execution_engine.py prompt <phase> <iteration> --task "desc" [--contract "..."] [--remaining-min N]
-  python3 execution_engine.py cooldown-plan <iteration> --task-type <type> [--codex-wait] [--pr-review]
+  python3 _execution_engine.py classify "task description"
+  python3 _execution_engine.py route <task_type> <phase> [--budget-pct N]
+  python3 _execution_engine.py next-phase <current_phase> <verdict>
+  python3 _execution_engine.py should-refine <task_type> <round> [--max N]
+  python3 _execution_engine.py prompt <phase> <iteration> --task "desc" [--contract "..."] [--remaining-min N]
+  python3 _execution_engine.py cooldown-plan <iteration> --task-type <type> [--codex-wait] [--pr-review]
 
-Python usage (for conductor):
-  from execution_engine import ExecutionEngine
+Python usage:
+  from _execution_engine import ExecutionEngine
   engine = ExecutionEngine()
   strategy = engine.classify("Add JWT auth to all API endpoints")
 """

@@ -5,13 +5,13 @@ Estimates how much 5h and 7d budget a task will consume before launching.
 Uses historical data when available, falls back to heuristics when sparse.
 
 Usage:
-    from budget_predictor import predict_budget
+    from _budget_predictor import predict_budget
     prediction = predict_budget(task_dict)
     # Returns: {"five_hour_pct": 12.5, "seven_day_pct": 3.2, "confidence": "low", "method": "heuristic"}
 
 CLI:
-    python3 budget_predictor.py '{"duration_min": 120, "description": "build feature"}'
-    python3 budget_predictor.py --stats   # Show model accuracy stats
+    python3 _budget_predictor.py '{"duration_min": 120, "description": "build feature"}'
+    python3 _budget_predictor.py --stats   # Show model accuracy stats
 """
 
 import json

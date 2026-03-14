@@ -2,8 +2,8 @@
 """
 Shared session timer utility for timed autonomous sessions.
 
-Underscore prefix = internal module, not a hook itself.
-Used by: timed_session_stop.py, precompact_intent_anchor.py, CLAUDE.md protocol
+Underscore prefix = internal module, not a standalone script.
+Used by: timed_session_launcher.sh (timer lifecycle, phase tracking)
 
 CLI usage:
   python3 _session_timer.py start <minutes>   # Start a timed session

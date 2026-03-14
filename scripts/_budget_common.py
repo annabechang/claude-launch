@@ -1,9 +1,8 @@
 """
-Shared budget utilities for dual-budget (Claude + Codex) hooks.
+Shared budget utilities for dual-budget (Claude + Codex) awareness.
 
-Underscore prefix = internal module, not a hook itself.
-Used by: budget_advisor_start.py, budget_advisor_stop.py, codex_context_injector.py,
-         auto_resume_end.py, precompact_intent_anchor.py
+Underscore prefix = internal module, not a standalone script.
+Used by: timed_session_launcher.sh (budget checks, SURGE mode, delegation matrix)
 """
 
 import hashlib
@@ -406,7 +405,7 @@ DELEGATION_MATRIX = {
         "mode": "MINIMAL",
         "label": "Both tight -- minimal usage",
         "guidance": (
-            "- Reduce all resource usage. LEAN Ralph only.\n"
+            "- Reduce all resource usage. Lean mode only.\n"
             "- Skip optional reviews. Only critical Codex calls.\n"
             "- Start writing checkpoints"
         ),
@@ -462,17 +461,17 @@ def get_delegation(claude_phase: str, codex_phase: str) -> dict:
 CLAUDE_PHASE_GUIDANCE = {
     "SPRINT": (
         "- Go all-in: spawn parallel subagents, use Codex reviews freely, batch work\n"
-        "- Ralph Loop: use FULL tier (subagents + Codex inside iterations)\n"
+        "- Full autonomy: subagents + Codex inside iterations\n"
         "- No pacing constraints -- maximize output while budget is fresh"
     ),
     "CRUISE": (
         "- Normal pacing: standard approach, use subagents and Codex as needed\n"
-        "- Ralph Loop: FULL or LEAN tier depending on task\n"
+        "- Full or lean autonomy depending on task complexity\n"
         "- No special constraints -- steady state operation"
     ),
     "CONSERVE": (
         "- Reduce resource usage: fewer subagents, skip optional Codex reviews\n"
-        "- Ralph Loop: use LEAN mode (no subagents, comparable quality)\n"
+        "- Lean mode: no subagents, comparable quality\n"
         "- Start thinking about checkpoints\n"
         "- Warn user: mention budget is getting tight"
     ),
@@ -480,7 +479,7 @@ CLAUDE_PHASE_GUIDANCE = {
         "- STOP new major work immediately\n"
         "- Write notes/resume-checkpoint.md with: Task, Status, Next Steps, Files to Read, Modified Files\n"
         "- Commit all changes\n"
-        "- Do NOT start new Ralph Loops or spawn subagents\n"
+        "- Do NOT start new autonomous loops or spawn subagents\n"
         "- Inform user: 'Budget at X%. Writing checkpoint for next session.'"
     ),
 }
@@ -489,7 +488,7 @@ SURGE_PHASE_GUIDANCE = {
     "SPRINT": (
         "- SURGE: Go all-in. Maximum throughput. No pacing constraints.\n"
         "- The launcher/system manages budget externally -- push hard.\n"
-        "- Spawn subagents, use Codex for reviews, full Ralph Loop."
+        "- Spawn subagents, use Codex for reviews, full autonomy."
     ),
     "CRUISE": (
         "- SURGE: Still working aggressively. Budget approaching soft target.\n"
