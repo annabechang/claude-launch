@@ -45,11 +45,11 @@ This project optimizes for **intent fidelity under autonomy**:
 
 ## Quick start
 
-**Option A — quick install via Claude:**
+**Option A — tell Claude to install it:**
 
 > "Clone https://github.com/annabechang/claude-launch.git and install it."
 
-**Option B — learn it and make it your own:**
+**Option B — tell Claude to learn it and make it your own:**
 
 > "Clone https://github.com/annabechang/claude-launch.git, read through everything, learn how it works, and make it your own. Adapt it to fit my setup."
 
