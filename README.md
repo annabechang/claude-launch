@@ -45,13 +45,21 @@ This project optimizes for **intent fidelity under autonomy**:
 
 ## Quick start
 
+**Option A — just tell Claude:**
+
+> "Clone https://github.com/annabechang/claude-launch.git, read the install.sh, and install it. Adapt anything that doesn't fit my setup."
+
+Claude will read the installer, understand the structure, and set it up for your environment — including adapting paths, hooks, or credential retrieval if needed.
+
+**Option B — manual install:**
+
 ```bash
 git clone https://github.com/annabechang/claude-launch.git
 cd claude-launch
 chmod +x install.sh && ./install.sh
 ```
 
-Inside any Claude Code session:
+Then inside any Claude Code session:
 
 ```bash
 /launch 60 "Add WebSocket reconnection with exponential backoff"
