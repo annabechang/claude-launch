@@ -47,9 +47,9 @@ This project optimizes for **intent fidelity under autonomy**:
 
 **Option A — just tell Claude:**
 
-> "Clone https://github.com/annabechang/claude-launch.git, read the install.sh, and install it. Adapt anything that doesn't fit my setup."
+> "Clone https://github.com/annabechang/claude-launch.git, read through everything, learn how it works, and make it your own. Adapt it to fit my setup."
 
-Claude will read the installer, understand the structure, and set it up for your environment — including adapting paths, hooks, or credential retrieval if needed.
+Claude will read the codebase, understand the architecture, install what makes sense for your environment, and adapt paths, hooks, or credential retrieval as needed.
 
 **Option B — manual install:**
 
