@@ -59,7 +59,7 @@ cd claude-launch
 chmod +x install.sh && ./install.sh
 ```
 
-Then inside any Claude Code session:
+Then inside any Claude Code session, just run `/launch` — it will ask what you want to work on, how long to run, and clarify scope before launching. Or pass it directly:
 
 ```bash
 /launch 60 "Add WebSocket reconnection with exponential backoff"
