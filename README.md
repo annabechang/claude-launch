@@ -59,15 +59,15 @@ cd claude-launch
 chmod +x install.sh && ./install.sh
 ```
 
-Then just tell Claude what you want — you don't need to know any commands:
+Then just tell Claude what you want:
 
-> "Work on rewriting the data pipeline for the next 6 hours while I sleep"
+> "Use launch to rewrite the data pipeline for the next 6 hours while I sleep"
 
-> "Spend an hour adding WebSocket reconnection with exponential backoff"
+> "Use launch to spend an hour adding WebSocket reconnection with backoff"
 
-> "Run overnight until 9am improving test coverage for the auth module"
+> "Use launch to run overnight until 9am improving test coverage for auth"
 
-Claude will recognize the intent, invoke `/launch` with the right parameters, clarify scope with you, generate a task contract, and start an autonomous session.
+Claude will figure out the right flags, clarify scope with you, generate a task contract, and start an autonomous session — no need to memorize syntax.
 
 You can also call `/launch` directly if you prefer:
 
