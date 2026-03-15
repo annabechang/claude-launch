@@ -59,7 +59,17 @@ cd claude-launch
 chmod +x install.sh && ./install.sh
 ```
 
-Then inside any Claude Code session, just run `/launch` — it will ask what you want to work on, how long to run, and clarify scope before launching. Or pass it directly:
+Then just tell Claude what you want — you don't need to know any commands:
+
+> "Work on rewriting the data pipeline for the next 6 hours while I sleep"
+
+> "Spend an hour adding WebSocket reconnection with exponential backoff"
+
+> "Run overnight until 9am improving test coverage for the auth module"
+
+Claude will recognize the intent, invoke `/launch` with the right parameters, clarify scope with you, generate a task contract, and start an autonomous session.
+
+You can also call `/launch` directly if you prefer:
 
 ```bash
 /launch 60 "Add WebSocket reconnection with exponential backoff"
