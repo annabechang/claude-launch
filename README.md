@@ -63,8 +63,8 @@ Then inside any Claude Code session:
 
 ```bash
 /launch 60 "Add WebSocket reconnection with exponential backoff"
+/launch 360 --surge "Rewrite the data pipeline to use streaming transforms"
 /launch --until 09:00 "Improve test coverage for auth"
-/launch 120 --surge "Maximize overnight throughput"
 /launch 180 --pipeline "Refactor auth into staged migration"
 ```
 
